@@ -4,7 +4,7 @@
  */
 
 import assert from 'node:assert/strict'
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { after, before, describe, it } from 'node:test'
@@ -183,20 +183,38 @@ describe('guest session snapshot', () => {
 
 describe('published lib/ mirror', () => {
   it('matches src/, so a git install needs no build step', () => {
-    for (const relative of ['index.js', join('client', 'index.js')]) {
-      const source = readFileSync(join(root, 'src', relative), 'utf8')
-      const published = readFileSync(join(root, 'lib', relative), 'utf8')
-      assert.equal(
-        published,
-        source,
-        `lib/${relative} is out of date; run: npm run build`,
+    for (const [from, to] of [['index.js', 'index.js'], [join('client', 'index.js'), 'client.js']]) {
+      const source = readFileSync(join(root, 'src', from), 'utf8')
+      const published = readFileSync(join(root, 'lib', to), 'utf8')
+      assert.equal(published, source, `lib/${to} is out of date; run: npm run build`)
+    }
+  })
+
+  it('publishes every exported path as an existing regular file', () => {
+    // Regression guard for the startup abort: the manifest exported
+    // ./lib/client.js while the build wrote ./lib/client/index.js. DSH resolves
+    // `exports["./client"]` as an exact file path with no index fallback, so the
+    // client module registry threw MissingClientBundleError and the whole Host
+    // boot failed — DSH would not open at all. Assert the path, not the bytes.
+    const manifest = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
+    for (const [key, value] of Object.entries(manifest.exports)) {
+      const relative = typeof value === 'string' ? value : value.default
+      assert.equal(typeof relative, 'string', `exports["${key}"] must name a file`)
+      assert.ok(
+        existsSync(join(root, relative)),
+        `exports["${key}"] points at ${relative}, which does not exist`,
+      )
+      assert.ok(
+        statSync(join(root, relative)).isFile(),
+        `exports["${key}"] must resolve to a regular file, not a directory`,
       )
     }
+    assert.ok(statSync(join(root, manifest.main)).isFile(), 'main must be a regular file')
   })
 
   it('registers the browser bundle under the manifest name', () => {
     const manifest = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
-    const client = readFileSync(join(root, 'lib', 'client', 'index.js'), 'utf8')
+    const client = readFileSync(join(root, 'lib', 'client.js'), 'utf8')
     assert.ok(
       client.includes(`id: '${manifest.name}'`),
       'the browser bundle must load under the manifest name verbatim',

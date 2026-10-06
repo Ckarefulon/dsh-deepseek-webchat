@@ -66,6 +66,37 @@ Your bindings and saved login live in `~/.dsh/dsh-deepseek-webchat/` and are
 left in place; delete that directory to remove them too.
 </details>
 
+<details>
+<summary>Troubleshooting: DSH will not start after installing</summary>
+
+DSH shows **"The application could not start or stopped unexpectedly"** and
+refuses to open. The crash log (the path is shown in the dialog, under
+`%APPDATA%\@deepseek-ai\dsh-desktop\logs\`) contains
+`client-modules: client bundle not found`.
+
+That means the installed copy's `exports["./client"]` does not point at a real
+file. Fix it by reinstalling the plugin from a commit that has the flat layout:
+
+```bash
+dsh plugin --profile desktop remove @ckarefulon/dsh-deepseek-webchat
+dsh plugin --profile desktop add github:Ckarefulon/dsh-deepseek-webchat
+```
+
+To confirm the layout before restarting, from the installed package directory:
+
+```bash
+node -e "const p=require('./package.json');const r=p.exports['./client'].default;console.log(r, require('fs').existsSync(r))"
+```
+
+It must print `./lib/client.js true`. If it prints `false`, do not restart DSH —
+the boot will abort again.
+
+The dialog's *"Disable third-party plugins, back up profile patch, and
+restart"* button also works: it starts DSH with third-party plugins unmounted
+and saves your profile patch alongside as `cordis.patch.yml.bak-<timestamp>`.
+That backup is your configuration, not the plugin, so keep it.
+</details>
+
 ## Using it
 
 1. **Open the tab.** Click the chat icon in the conversation header, or pick
@@ -230,13 +261,39 @@ two still match, so they cannot drift.
 After editing `src/`, run `npm run build` and commit both trees.
 
 ```
-src/index.js          host half   -> lib/index.js
-src/client/index.js   browser half -> lib/client/index.js
+src/index.js          host half    -> lib/index.js
+src/client/index.js   browser half -> lib/client.js   (note: flat, not lib/client/index.js)
 scripts/build.mjs     the copy
 test/index.test.js    host: urls, message filtering, bindings, snapshot, mirror
 test/routes.test.js   host: every HTTP route, driven through apply()
 test/client.test.js   browser: bundle load, registrations, no-auto-send
 ```
+
+### Why the browser half is `lib/client.js` and not `lib/client/index.js`
+
+This is load-bearing, and getting it wrong makes DSH fail to start at all.
+
+DSH resolves a package's browser half by joining `exports["./client"]` onto the
+package root and reading the result as an **exact file path** — there is no
+extension and no directory-index fallback. If the manifest says
+`./lib/client.js` while the build writes `./lib/client/index.js`, the client
+module registry throws `MissingClientBundleError` while the Host is starting,
+and because that registry is a *required* plugin the whole boot aborts. The
+window shows "The application could not start or stopped unexpectedly" and
+names `client-hmr` as waiting on `clientModules`; the crash log reports:
+
+```
+client-modules: client bundle not found; run `pnpm run build` before launch:
+  package: <name>
+  path: .../lib/client.js
+```
+
+Every package DSH ships uses the flat `./lib/client.js` form. `npm test` asserts
+that every path in `exports` exists and is a regular file, so this cannot
+regress.
+
+If you hit that dialog, your installed copy is stale. Reinstall (see
+[Install](#install)) after pulling the fixed commit.
 
 ## License
 

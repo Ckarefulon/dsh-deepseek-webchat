@@ -49,8 +49,11 @@
     }
   },
   "files": [
-    "lib/**/*.js",
-    "src/**/*.js",
+    "lib/index.js",
+    "lib/client.js",
+    "src/index.js",
+    "src/client/index.js",
+    "scripts/build.mjs",
     "cordis.patch.yml",
     "README.md",
     "LICENSE"

@@ -15,7 +15,9 @@ import { describe, it } from 'node:test'
 import { fileURLToPath } from 'node:url'
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)))
-const bundle = readFileSync(join(root, 'lib', 'client', 'index.js'), 'utf8')
+// Read the bundle at the exact path the manifest exports, so this test would
+// also fail if the published layout ever drifted from the manifest again.
+const bundle = readFileSync(join(root, 'lib', 'client.js'), 'utf8')
 const manifest = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
 
 /**
