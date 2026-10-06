@@ -1,0 +1,7 @@
+node_modules/
+*.log
+.DS_Store
+Thumbs.db
+
+# lib/ is intentionally COMMITTED: a git-hosted DSH plugin must not need a
+# build step on install. Do not add lib/ here.

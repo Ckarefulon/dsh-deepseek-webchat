@@ -1,0 +1,62 @@
+{
+  "name": "@ckarefulon/dsh-deepseek-webchat",
+  "version": "0.1.0",
+  "description": "Embeds the official chat.deepseek.com web app in a DSH sidebar tab through the desktop shell's native browser guest, binds one DeepSeek conversation per DSH Session, and fills selected DSH context into the DeepSeek composer as a blockquote for you to send yourself.",
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "deepseek",
+    "webchat",
+    "sidebar",
+    "harness-plugin",
+    "plugin"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Ckarefulon/dsh-deepseek-webchat.git"
+  },
+  "homepage": "https://github.com/Ckarefulon/dsh-deepseek-webchat#readme",
+  "bugs": {
+    "url": "https://github.com/Ckarefulon/dsh-deepseek-webchat/issues"
+  },
+  "author": "Ckarefulon",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=22",
+    "dsh": ">=0.2.0-rc.1"
+  },
+  "main": "lib/index.js",
+  "exports": {
+    ".": {
+      "default": "./lib/index.js"
+    },
+    "./client": {
+      "default": "./lib/client.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-conversation",
+        "@deepseek-ai/dsh-client-ui-sidebar-right"
+      ]
+    }
+  },
+  "files": [
+    "lib/**/*.js",
+    "src/**/*.js",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "test": "node --test"
+  }
+}

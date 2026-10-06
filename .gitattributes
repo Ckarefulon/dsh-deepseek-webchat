@@ -1,0 +1,12 @@
+# Normalize to LF in the repository and in the working tree.
+#
+# This matters more than usual here: `npm test` asserts that `lib/` is a
+# byte-for-byte copy of `src/`, so an autocrlf conversion applied to one tree
+# and not the other would fail the suite for a reason that has nothing to do
+# with the code.
+* text=auto eol=lf
+
+# Binary-ish files that must never be rewritten.
+*.png binary
+*.jpg binary
+*.ico binary

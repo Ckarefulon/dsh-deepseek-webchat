@@ -1,0 +1,20 @@
+# dsh-deepseek-webchat bundle patch: inserts the dual-face plugin row into a
+# profile roster. Applied as a profile bundle layer (the `dsh.bundle.patch`
+# manifest field) over dsh-base; activate by adding this package to the
+# profile's `dsh.profile.bundles`, or with
+#   dsh plugin --profile desktop add github:Ckarefulon/dsh-deepseek-webchat
+#
+# The row is a bare plugin by package name: the node half (exports ".") runs in
+# the Host process and serves this plugin's /api/dsh-deepseek-webchat routes,
+# and the `dsh.client` declaration in package.json makes the browser half
+# (exports "./client", served at /plugins/<id>/client.js) load in the Web GUI as
+# the sidebar tab type and its panel. `name` must be this package's manifest
+# name verbatim (scoped names included) — dsh-client-modules keys every browser
+# row by it, and lib/client.js registers its factory under the same id.
+# `id` is the profile entry id; keep it stable because DSH also uses it as the
+# settings-form namespace. It must be unique per profile: a second package
+# inserting the same `deepseek-webchat` id cannot be installed alongside this
+# one — the duplicate is rejected at boot.
+- insert:
+    - id: deepseek-webchat
+      name: '@ckarefulon/dsh-deepseek-webchat'
