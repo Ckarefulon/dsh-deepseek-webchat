@@ -879,7 +879,7 @@ window.__ModuleLoader__.load({
 		}
 
 		/**
-		 * The blockquote label for one row.
+		 * The label for one row, used both in the list and in the blockquote.
 		 * @param row - a picker row.
 		 * @param labels - `{ user, assistant, tool, kind }`.
 		 * @returns the label text.
@@ -888,9 +888,9 @@ window.__ModuleLoader__.load({
 			const kind = row.kind ?? row.role
 			if (kind === 'user') return labels.user
 			if (kind === 'assistant') return labels.assistant
-			const named = labels.kind?.[kind]
-			if (named === undefined) return row.role === 'tool' ? labels.tool : labels.assistant
-			return row.role === 'tool' ? labels.tool + ' · ' + named : named
+			// Every remaining kind has a two-character label, which is what keeps
+			// the role column a fixed narrow width in both locales.
+			return labels.kind?.[kind] ?? (row.role === 'tool' ? labels.tool : labels.assistant)
 		}
 
 		/**
