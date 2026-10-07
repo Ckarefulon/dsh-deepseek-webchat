@@ -174,7 +174,7 @@ describe('message extraction', () => {
     assert.deepEqual(rows.map((row) => row.kind), ['question'])
   })
 
-  it('adds thinking, tool calls, results, todos, commands and summaries when advanced', () => {
+  it('adds thinking, tool calls, results, commands and summaries when advanced', () => {
     const events = [
       { seq: 1, type: 'assistant/message', data: { message: { content: [
         { type: 'reasoning', text: 'they want X' },
@@ -202,8 +202,9 @@ describe('message extraction', () => {
       ['command', '/compact --now'],
       ['summary', 'we did stuff'],
     ])
-    // The default set is a strict subset: no machinery rows.
-    assert.deepEqual(extractMessages(events).map((row) => row.kind), ['assistant'])
+    // The default set keeps the todo list — the agent's own plan, which the user
+    // is already looking at — and drops only the raw machinery.
+    assert.deepEqual(extractMessages(events).map((row) => row.kind), ['assistant', 'todo'])
   })
 
   it('skips empty messages and survives junk', () => {

@@ -26,10 +26,13 @@ browser uses.
 | **Login persists** | Sign in once; the plugin restores your session on later launches. |
 | **One conversation per DSH Session** | Each DSH Session gets its own DeepSeek conversation, remembered by id. |
 | **Follows the session you switch to** | Switch DSH Sessions and the sidebar follows to that Session's conversation. |
-| **Manual context push** | Tick messages, add a question, preview it, then fill the DeepSeek composer. |
+| **Manual context push** | Tick rows, add a question, preview it, then fill and send. |
 | **Questions included** | The agent's questions to you, their options, and your answers are quotable too. |
+| **Todo list included** | The agent's todo list is quotable without turning anything on. |
+| **One click to send** | 「填入并发送」 fills the composer and submits it; 「仅填入」 stops there. |
+| **Bulk selection** | Select all, clear, or take the last 5/10/20/50 rows in one click. |
 | **Advanced opt-in** | A switch reveals thinking, tool calls and results — off by default. |
-| **You press Enter** | The plugin never sends. Nothing leaves your machine until you submit. |
+| **Explained context** | An optional note tells DeepSeek what the quotes are and where they came from. |
 | **No back-flow** | DeepSeek's answers are never written back into your DSH conversation. |
 
 ## Install
@@ -108,13 +111,19 @@ That backup is your configuration, not the plugin, so keep it.
 3. **Send one message** in the DeepSeek page. DeepSeek creates a conversation
    lazily, so this is the moment its id exists — the plugin notices and binds it
    to the current DSH Session. The toolbar dot turns green.
-4. **Quote context.** Press 「引用上下文」. Tick what you want, optionally type a
-   question or instruction, and check the preview. The list holds your turns, the
-   assistant's replies, **the questions the agent asked you** (with the options it
-   offered), and **your answers** to them.
-5. **Press 「填入 DeepSeek 输入框」.** The blockquote lands in DeepSeek's composer
-   and the page comes back into view.
-6. **Read it over and press Enter yourself.** The plugin stops there.
+4. **Quote context.** Press 「引用上下文」. The list opens scrolled to the newest
+   rows. Tick what you want — or use 「全选」, 「清除」, or the number box plus
+   「选末尾」 to take the last few in one go — optionally type a question or
+   instruction, and check the preview. The list holds your turns, the assistant's
+   replies, **the agent's todo list**, **the questions it asked you** (with the
+   options it offered), and **your answers** to them.
+5. **Press 「填入并发送」.** The text goes into DeepSeek's composer and is
+   submitted for you; the panel returns to the page and the selection clears, so
+   the next push starts from a clean slate. Use 「仅填入」 instead if you would
+   rather read it over in the composer first.
+6. **That is the send.** The plugin watches the composer to confirm it went out,
+   and says so — or tells you plainly that it did not, so you can press Enter
+   there yourself.
 
 The toolbar also has 「刷新」 (reload the page) and 「解除绑定」 (forget this
 Session's conversation, so the next visit starts a new one).
@@ -122,35 +131,66 @@ Session's conversation, so the next visit starts a new one).
 Switching to a different DSH Session moves the panel to *that* Session's
 conversation automatically.
 
+### What gets sent, and how
+
+Every push is still something you asked for: the plugin fills the composer and
+submits it **only** when you click 「填入并发送」. There is no timer, no
+background upload, and nothing is sent merely because the panel is open.
+
+Sending goes through DeepSeek's own composer handler rather than a synthetic
+shortcut invented here. Its composer runs an `onKeyDown` that, for a plain
+Enter, calls the same function its send button calls — so the plugin dispatches
+a bubbling Enter at the textarea and lets DeepSeek do the rest. (Its button's
+class name is a build-time hash, so guessing at it would break on any rebuild.)
+
+Because a synthetic key press could in principle be ignored, the plugin does not
+assume it worked. DeepSeek clears its textarea once a send is accepted, so the
+plugin reads the composer back: cleared means sent. If it still holds text, the
+plugin falls back to clicking DeepSeek's own send button, and if that fails too
+it says so instead of pretending — leaving the text sitting in the composer for
+you to send by hand.
+
+**「附上说明」** (on by default) puts a short note in front of the quoted rows:
+
+> 以下是我在另一个 AI 助手（DSH）里的对话片段，引用给你作为背景参考。以「> 」
+> 开头的行是原文，【】里标出的是这段内容属于谁…
+
+Without it, DeepSeek receives a wall of quotes and 【】 labels with no
+explanation of what they are. Turn it off if you would rather send the raw
+quotes.
+
 ### The advanced switch
 
-By default the picker lists the conversation as a person reads it. Tick
-**「高级：包含思考过程与工具调用」** to also list the machinery behind it:
-the model's reasoning blocks, its tool calls, the tool results, todo lists,
-slash commands, and compaction summaries. It is off on every open, and the host
-does the filtering, so an advanced row is never even sent to the browser unless
-you asked for it.
+By default the picker lists the conversation as a person reads it, plus the
+agent's todo list. Tick **「高级：包含思考过程与工具调用」** to also list the
+machinery behind it: the model's reasoning blocks, its tool calls, the tool
+results, slash commands, and compaction summaries — including tool output that
+may contain file contents. It is off on every open, and the host does the
+filtering, so an advanced row is never even sent to the browser unless you asked
+for it.
 
-Each row is labelled by what it *is*, not only by who said it, so a quoted
-answer and a quoted tool result stay distinguishable in the blockquote:
+Each row is marked with an icon from the shell's own icon set plus a short
+label, so a quoted answer and a quoted tool result stay distinguishable in the
+blockquote:
 
 ```
 > 【提问】Confirm：Which layout?
 >   · Sidebar — right column
 >   · Center
 > 【回答】Sidebar, please
+> 【待办】[x] write the picker
+> [~] test it
 ```
 
 ## Privacy
 
-This plugin is built so that **nothing leaves your machine without you pressing
-send**, and so that the things you would least want to leak are never even
+This plugin is built so that **nothing leaves your machine unless you press a
+button**, and so that the things you would least want to leak are never even
 offered.
 
-**What is sent, and when.** Only the rows you tick, only after you press
-「填入 DeepSeek 输入框」 — and even then it is only placed in the composer. It
-reaches DeepSeek's servers when *you* press Enter. That is the whole flow: this
-plugin has no timer, no auto-send, and no background upload.
+**What is sent, and when.** Only the rows you tick, and only when you click
+「填入并发送」 (or 「仅填入」, which stops at the composer). Both are explicit
+actions; the plugin has no timer and no background upload.
 
 **What is never offered.** The host half filters the session log before it
 reaches the picker, dropping in **both** modes:
@@ -167,7 +207,8 @@ reaches the picker, dropping in **both** modes:
 tool results are **not** offered until you turn on the advanced switch. When you
 do, remember that a tool result can contain file contents the agent read — that
 is exactly the kind of thing the default set keeps out, and the switch is your
-explicit say-so.
+explicit say-so. A todo list is the exception: it is the agent's own plan, which
+you are already reading on screen, so it is offered by default.
 
 So a system prompt, an API key in your environment, or a file the agent read
 cannot be quoted by accident.
@@ -308,7 +349,7 @@ src/client/index.js   browser half -> lib/client.js   (note: flat, not lib/clien
 scripts/build.mjs     the copy
 test/index.test.js    host: urls, message filtering, bindings, snapshot, mirror
 test/routes.test.js   host: every HTTP route, driven through apply()
-test/client.test.js   browser: bundle load, registrations, no-auto-send
+test/client.test.js   browser: bundle load, registrations, fill + send, row icons
 ```
 
 ### Two checks worth running before a restart

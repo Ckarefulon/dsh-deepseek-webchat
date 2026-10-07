@@ -223,17 +223,81 @@ describe('registrations', () => {
   })
 })
 
-describe('composer filling', () => {
-  it('never submits: the fill script only sets the value and fires input', () => {
+describe('composer filling and sending', () => {
+  it('fills through the native value setter, not a plain assignment', () => {
     // The script is built inline in the bundle; assert on its text so a future
-    // edit cannot quietly add a click or a form submit.
+    // edit cannot go back to writing `.value`, which React ignores.
     assert.ok(bundle.includes('dispatchEvent(new Event("input"'))
     assert.ok(bundle.includes('Object.getOwnPropertyDescriptor'))
-    assert.equal(/\.submit\(\)|requestSubmit|dispatchEvent\(new KeyboardEvent/.test(bundle), false)
+  })
+
+  it('never submits the form itself', () => {
+    assert.equal(/\.submit\(\)|requestSubmit/.test(bundle), false)
+  })
+
+  it('sends through DeepSeek own Enter handler', () => {
+    // Its composer runs onKeyDown and, for a plain Enter, calls the same function
+    // its send button calls — so a bubbling Enter is the user's own code path.
+    // Inventing a shortcut, or guessing the button's hashed class, would not be.
+    assert.ok(bundle.includes('new KeyboardEvent("keydown"'))
+    assert.ok(bundle.includes('key: "Enter"'))
+    assert.ok(bundle.includes('bubbles: true, cancelable: true, composed: true'))
+  })
+
+  it('treats a cleared composer as the receipt, with the button as fallback', () => {
+    // DeepSeek empties its textarea once a send is accepted, so that — not an
+    // assumption that the click worked — is what we report on.
+    assert.ok(bundle.includes('empty: value.trim()'))
+    assert.ok(bundle.includes('/send|submit|发送/i'))
+    assert.ok(bundle.includes('found: true'))
+  })
+
+  it('re-checks the composer before clicking, so it cannot send twice', () => {
+    assert.ok(bundle.includes('composerCleared'))
+    assert.ok(bundle.includes('not-sent'))
   })
 
   it('targets the class DeepSeek actually renders', () => {
     assert.ok(bundle.includes('textarea.ds-textarea__textarea'))
+  })
+})
+
+describe('picker affordances', () => {
+  it('marks every row kind with artwork from the shell icon set', () => {
+    // One fingerprint per glyph, copied from dsh-client-ui-primitives. Checking
+    // the leading path data is what proves all ten shipped, rather than trusting
+    // that the map was filled in.
+    const fingerprints = [
+      'M8 8.25C9.51878',        // user
+      'M5.875 3C5.875',         // assistant
+      'M5.75 6.69646',          // question
+      'M2.25 8.5L5.49732',      // answer
+      'M10.2854 5.71481',       // reasoning
+      'M6.27612 1.5L4.52612',   // tool-call
+      'M11.8798 9.55347',       // tool-result
+      'M3.75 6.25C4.7165',      // todo
+      'M10.3329 7.91346',       // command
+      'M8 1.5C8.85359',         // summary
+    ]
+    for (const path of fingerprints) assert.ok(bundle.includes(path), path)
+    assert.ok(bundle.includes("viewBox: '0 0 16 16'"))
+  })
+
+  it('explains the quoted context to DeepSeek before sending it', () => {
+    assert.ok(bundle.includes('picker.preambleText'))
+  })
+
+  it('offers the last few rows as one action', () => {
+    assert.ok(bundle.includes('action.last'))
+    assert.ok(bundle.includes('slice(Math.max(0, rows.length - lastN))'))
+  })
+
+  it('scrolls the list to the newest rows', () => {
+    assert.ok(bundle.includes('node.scrollTop = node.scrollHeight'))
+  })
+
+  it('clears the selection once the content has been pushed', () => {
+    assert.ok(bundle.includes('setSelected(new Set())'))
   })
 })
 
