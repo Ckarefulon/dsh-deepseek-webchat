@@ -311,6 +311,35 @@ test/routes.test.js   host: every HTTP route, driven through apply()
 test/client.test.js   browser: bundle load, registrations, no-auto-send
 ```
 
+### Two checks worth running before a restart
+
+A broken manifest does not fail loudly at build time — it aborts the Host boot,
+so DSH simply never opens. Both checks are standalone: no dependencies, no
+`node_modules`, nothing to install.
+
+```bash
+npm run check:bundle                                   # this repo
+node scripts/check-client-bundle.mjs <packageRoot>     # any DSH plugin
+node scripts/check-profile-patch.mjs <patch.yml>
+```
+
+**`check-client-bundle.mjs`** replicates `resolveMeta()` from
+`@deepseek-ai/dsh-client-modules` verbatim: it joins `exports["./client"]` onto
+the package root and calls `statSync` on the result, with no extension
+completion and no directory-index fallback. A missing file throws
+`MissingClientBundleError`, and because `modules` is a required plugin the whole
+Host boot aborts. It also checks the neighbouring invariants — that the bundle
+declares its own `module`/`exports` (the loader passes `require` only), returns
+`module.exports`, and registers its own id. This is the check that reproduces
+the startup abort on the old `lib/client/index.js` layout.
+
+**`check-profile-patch.mjs`** parses a profile `cordis.patch.yml` the way the
+loader must: YAML with the `!!js` custom tag treated as an opaque scalar. It
+prints every entry id, so a patch can be reviewed before it is trusted — which
+is what you need after DSH's crash dialog has replaced a full patch with a
+minimal one. js-yaml is not a dependency of this repo; it is resolved from an
+installed DSH profile, or point `DSH_JS_YAML` at one.
+
 ### Why the browser half is `lib/client.js` and not `lib/client/index.js`
 
 This is load-bearing, and getting it wrong makes DSH fail to start at all.

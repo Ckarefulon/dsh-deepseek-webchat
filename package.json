@@ -54,12 +54,16 @@
     "src/index.js",
     "src/client/index.js",
     "scripts/build.mjs",
+    "scripts/check-client-bundle.mjs",
+    "scripts/check-profile-patch.mjs",
     "cordis.patch.yml",
     "README.md",
     "LICENSE"
   ],
   "scripts": {
     "build": "node scripts/build.mjs",
-    "test": "node --test"
+    "test": "node --test",
+    "check:bundle": "node scripts/check-client-bundle.mjs .",
+    "check:patch": "node scripts/check-profile-patch.mjs"
   }
 }
