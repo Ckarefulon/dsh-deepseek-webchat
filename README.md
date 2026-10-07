@@ -27,6 +27,8 @@ browser uses.
 | **One conversation per DSH Session** | Each DSH Session gets its own DeepSeek conversation, remembered by id. |
 | **Follows the session you switch to** | Switch DSH Sessions and the sidebar follows to that Session's conversation. |
 | **Manual context push** | Tick messages, add a question, preview it, then fill the DeepSeek composer. |
+| **Questions included** | The agent's questions to you, their options, and your answers are quotable too. |
+| **Advanced opt-in** | A switch reveals thinking, tool calls and results — off by default. |
 | **You press Enter** | The plugin never sends. Nothing leaves your machine until you submit. |
 | **No back-flow** | DeepSeek's answers are never written back into your DSH conversation. |
 
@@ -106,8 +108,10 @@ That backup is your configuration, not the plugin, so keep it.
 3. **Send one message** in the DeepSeek page. DeepSeek creates a conversation
    lazily, so this is the moment its id exists — the plugin notices and binds it
    to the current DSH Session. The toolbar dot turns green.
-4. **Quote context.** Press 「引用上下文」. Tick the messages you want, optionally
-   type a question or instruction, and check the preview.
+4. **Quote context.** Press 「引用上下文」. Tick what you want, optionally type a
+   question or instruction, and check the preview. The list holds your turns, the
+   assistant's replies, **the questions the agent asked you** (with the options it
+   offered), and **your answers** to them.
 5. **Press 「填入 DeepSeek 输入框」.** The blockquote lands in DeepSeek's composer
    and the page comes back into view.
 6. **Read it over and press Enter yourself.** The plugin stops there.
@@ -118,28 +122,52 @@ Session's conversation, so the next visit starts a new one).
 Switching to a different DSH Session moves the panel to *that* Session's
 conversation automatically.
 
+### The advanced switch
+
+By default the picker lists the conversation as a person reads it. Tick
+**「高级：包含思考过程与工具调用」** to also list the machinery behind it:
+the model's reasoning blocks, its tool calls, the tool results, todo lists,
+slash commands, and compaction summaries. It is off on every open, and the host
+does the filtering, so an advanced row is never even sent to the browser unless
+you asked for it.
+
+Each row is labelled by what it *is*, not only by who said it, so a quoted
+answer and a quoted tool result stay distinguishable in the blockquote:
+
+```
+> 【提问】Confirm：Which layout?
+>   · Sidebar — right column
+>   · Center
+> 【回答】Sidebar, please
+```
+
 ## Privacy
 
 This plugin is built so that **nothing leaves your machine without you pressing
 send**, and so that the things you would least want to leak are never even
 offered.
 
-**What is sent, and when.** Only the messages you tick, only after you press
+**What is sent, and when.** Only the rows you tick, only after you press
 「填入 DeepSeek 输入框」 — and even then it is only placed in the composer. It
 reaches DeepSeek's servers when *you* press Enter. That is the whole flow: this
 plugin has no timer, no auto-send, and no background upload.
 
-**What is never offered.** The picker lists **only** messages you typed and
-replies the assistant wrote. The host half filters the session log before it
-reaches the picker, dropping:
+**What is never offered.** The host half filters the session log before it
+reaches the picker, dropping in **both** modes:
 
 - `system/message` and `developer/message` events,
 - **injected `user/message` events** — agent instructions, skill catalogs, goal
   rounds, time context, compaction checkpoints, team and webhook deliveries,
   which DSH records as user messages but which you never typed. Only events whose
-  `source.kind` is `user` are treated as yours,
-- tool calls and tool results,
-- the model's private reasoning blocks.
+  `source.kind` is `user` (your turns) or `user-question-reply` (your answers to
+  the agent) are treated as yours,
+- approval records, request headers, model and sandbox selections.
+
+**What is off by default.** The model's private reasoning blocks, tool calls and
+tool results are **not** offered until you turn on the advanced switch. When you
+do, remember that a tool result can contain file contents the agent read — that
+is exactly the kind of thing the default set keeps out, and the switch is your
+explicit say-so.
 
 So a system prompt, an API key in your environment, or a file the agent read
 cannot be quoted by accident.
@@ -212,7 +240,7 @@ serves five routes under `/api/dsh-deepseek-webchat/`:
 | Route | Purpose |
 |---|---|
 | `state` | What the panel needs to describe itself. |
-| `messages?sessionId=` | The Session's quotable messages, filtered. |
+| `messages?sessionId=[&advanced=1]` | The Session's quotable rows, filtered. |
 | `binding` | Read/write/forget the DSH→DeepSeek conversation map. |
 | `session/restore` | Hand back the saved login state. |
 | `session/save` | Store the guest's login state. |
@@ -220,6 +248,20 @@ serves five routes under `/api/dsh-deepseek-webchat/`:
 It reads messages through `ctx.sessionQuery.readSession()`, which is
 live-preferred, and reduces the raw event log with the same text-extraction
 rules the harness itself uses.
+
+The `advanced` flag is honoured **host-side**, so the default response never
+contains a reasoning or tool row at all — the browser half cannot accidentally
+reveal one it was never given. The picker re-requests the list when the switch
+flips rather than filtering locally.
+
+Rows carry a `kind` alongside `role`: `user` and `assistant` for dialogue,
+`question` and `answer` for the agent's questions and your replies (default),
+then `reasoning`, `tool-call`, `tool-result`, `todo`, `command` and `summary`
+(advanced). A `question` row is read from the `tool/call` event whose
+`name === 'ask_user_question'`, parsed with the same `questionsOf` shape the
+harness's own user-questions service uses; the answer arrives as an ordinary
+`user/message` tagged `source.kind === 'user-question-reply'`, which the plain
+human filter would otherwise drop.
 
 **Browser half** (`lib/client.js`, exports `./client`) registers the sidebar tab
 type, its body, and a header door.

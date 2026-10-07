@@ -128,9 +128,25 @@ describe('messages route', () => {
     assert.equal(status, 200)
     assert.equal(body.ok, true)
     assert.deepEqual(body.messages, [
-      { seq: 2, role: 'user', text: 'my question' },
-      { seq: 3, role: 'assistant', text: 'my answer' },
+      { seq: 2, role: 'user', kind: 'user', text: 'my question' },
+      { seq: 3, role: 'assistant', kind: 'assistant', text: 'my answer' },
     ])
+  })
+
+  it('lists the machinery only when asked for advanced rows', async () => {
+    const events = [
+      { seq: 1, type: 'user/message', data: { source: { kind: 'user' }, content: [{ type: 'text', text: 'hi' }] } },
+      { seq: 2, type: 'assistant/message', data: { message: { content: [
+        { type: 'reasoning', text: 'thinking' },
+        { type: 'text', text: 'ok' },
+      ] } } },
+      { seq: 3, type: 'tool/call', data: { name: 'bash', callId: 'c', arguments: '{}' } },
+    ]
+    const host = hostWith({ readSession: async () => ({ events }) })
+    const plain = await host.call(ROUTES.messages, { query: 'sessionId=s1' })
+    assert.deepEqual(plain.body.messages.map((row) => row.kind), ['user', 'assistant'])
+    const rich = await host.call(ROUTES.messages, { query: 'sessionId=s1&advanced=1' })
+    assert.deepEqual(rich.body.messages.map((row) => row.kind), ['user', 'assistant', 'reasoning', 'tool-call'])
   })
 
   it('explains a missing session id rather than throwing', async () => {

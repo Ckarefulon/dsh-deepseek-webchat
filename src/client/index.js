@@ -115,10 +115,22 @@ window.__ModuleLoader__.load({
 			'action.copy': '复制',
 			'picker.title': '选择要引用的消息',
 			'picker.empty': '这个会话还没有可引用的消息。',
+			'picker.emptyAdvanced': '这个会话还没有可引用的内容。',
 			'picker.loading': '正在读取会话…',
 			'picker.selected': '已选 {count} 条',
 			'picker.role.user': '用户',
 			'picker.role.assistant': '助手',
+			'picker.role.tool': '工具',
+			'picker.advanced': '高级：包含思考过程与工具调用',
+			'picker.advancedHint': '默认只列你与助手的对话，以及 AI 向你提的问题和选项。打开后会额外列出思考过程、工具调用、工具结果、待办、命令与压缩摘要。',
+			'picker.kind.question': '提问',
+			'picker.kind.answer': '回答',
+			'picker.kind.reasoning': '思考',
+			'picker.kind.toolCall': '调用',
+			'picker.kind.toolResult': '结果',
+			'picker.kind.todo': '待办',
+			'picker.kind.command': '命令',
+			'picker.kind.summary': '摘要',
 			'picker.question': '要一起发送的问题或指令（可选）',
 			'picker.questionPlaceholder': '例如：请基于以上内容，帮我补充一个更完整的方案。',
 			'picker.preview': '将填入 DeepSeek 输入框的内容',
@@ -150,10 +162,22 @@ window.__ModuleLoader__.load({
 			'action.copy': 'Copy',
 			'picker.title': 'Choose messages to quote',
 			'picker.empty': 'This session has no quotable messages yet.',
+			'picker.emptyAdvanced': 'This session has nothing quotable yet.',
 			'picker.loading': 'Reading the session…',
 			'picker.selected': '{count} selected',
 			'picker.role.user': 'User',
 			'picker.role.assistant': 'Assistant',
+			'picker.role.tool': 'Tool',
+			'picker.advanced': 'Advanced: include thinking and tool calls',
+			'picker.advancedHint': 'By default this lists your conversation with the assistant plus the questions it asked you and their options. Turning this on also lists thinking, tool calls, tool results, todos, commands and compaction summaries.',
+			'picker.kind.question': 'Question',
+			'picker.kind.answer': 'Answer',
+			'picker.kind.reasoning': 'Thinking',
+			'picker.kind.toolCall': 'Call',
+			'picker.kind.toolResult': 'Result',
+			'picker.kind.todo': 'Todo',
+			'picker.kind.command': 'Command',
+			'picker.kind.summary': 'Summary',
 			'picker.question': 'Question or instruction to send along (optional)',
 			'picker.questionPlaceholder': 'e.g. Based on the above, help me draft a more complete plan.',
 			'picker.preview': 'What will be filled into the DeepSeek composer',
@@ -320,7 +344,17 @@ window.__ModuleLoader__.load({
 			return platform + ' AppleWebKit/537.36 (KHTML, like Gecko) Chrome/' + chrome + '.0.0.0 Safari/537.36'
 		}
 
-		/** Inject this plugin's stylesheet once. */
+		/**
+		 * Inject this plugin's stylesheet once.
+		 *
+		 * Colours come from the shell's own design tokens (`--dsw-*`), which is
+		 * what makes the panel and its header door sit in the same visual system
+		 * as the built-in UI. Every token is paired with a literal fallback: the
+		 * `--dsh-color-*` family this file used to reference does not exist in
+		 * DSH at all, so those declarations were silently falling through to
+		 * `inherit` and rendering the header glyph pure white instead of the
+		 * muted ink the rest of that row uses.
+		 */
 		function ensureStyle() {
 			if (document.querySelector('style[' + OVERLAY_ATTR + '-style]') !== null) return
 			const tag = document.createElement('style')
@@ -330,37 +364,52 @@ window.__ModuleLoader__.load({
 				'[' + OVERLAY_ATTR + ']{position:fixed;display:none;z-index:40;overflow:hidden;background:#fff}',
 				'[' + OVERLAY_ATTR + '] webview{-webkit-app-region:no-drag;border:0;display:flex;width:100%;height:100%}',
 				// The panel itself.
-				'.dswc-root{display:flex;flex-direction:column;width:100%;height:100%;min-height:0;font-size:12px}',
-				'.dswc-toolbar{display:flex;align-items:center;gap:6px;padding:6px 8px;border-bottom:1px solid var(--dsh-color-border-subtle,rgba(128,128,128,.25));flex:none}',
-				'.dswc-status{font-size:11px;line-height:1;color:var(--dsh-color-text-secondary,#888)}',
+				'.dswc-root{display:flex;flex-direction:column;width:100%;height:100%;min-height:0;font-size:12px;color:var(--dsw-alias-label-primary,inherit)}',
+				'.dswc-toolbar{display:flex;align-items:center;gap:6px;padding:6px 8px;border-bottom:1px solid var(--dsw-alias-border-l4,rgba(128,128,128,.25));flex:none}',
+				'.dswc-status{font-size:11px;line-height:1;color:var(--dsw-alias-label-tertiary,#adb2b8)}',
 				'.dswc-status[data-state="bound"]{color:#2ea043}',
 				'.dswc-status[data-state="error"]{color:#d1242f}',
 				'.dswc-gap{flex:1 1 auto}',
-				'.dswc-button{font:inherit;font-size:11px;padding:3px 8px;border-radius:5px;border:1px solid var(--dsh-color-border-subtle,rgba(128,128,128,.35));background:transparent;color:inherit;cursor:pointer;white-space:nowrap}',
-				'.dswc-button:hover:not(:disabled){background:var(--dsh-color-bg-hover,rgba(128,128,128,.12))}',
+				'.dswc-button{font:inherit;font-size:11px;padding:3px 8px;border-radius:var(--dsw-radius-sm,8px);border:1px solid var(--dsw-alias-border-l4,rgba(128,128,128,.35));background:transparent;color:inherit;cursor:pointer;white-space:nowrap}',
+				'.dswc-button:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover,rgba(128,128,128,.12))}',
+				'.dswc-button:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary,#4d6bfe);outline-offset:1px}',
 				'.dswc-button:disabled{opacity:.45;cursor:default}',
-				'.dswc-primary{border-color:transparent;background:var(--dsh-color-accent,#4d6bfe);color:#fff}',
-				'.dswc-primary:hover:not(:disabled){background:var(--dsh-color-accent,#4d6bfe);opacity:.88}',
+				'.dswc-primary{border-color:transparent;background:var(--dsw-alias-state-business-primary,#4d6bfe);color:#fff}',
+				'.dswc-primary:hover:not(:disabled){background:var(--dsw-alias-state-business-primary,#4d6bfe);opacity:.88}',
 				'.dswc-host{position:relative;flex:1 1 auto;min-height:0}',
 				'.dswc-picker{display:flex;flex-direction:column;flex:1 1 auto;min-height:0;gap:6px;padding:8px}',
 				'.dswc-pickerHead{display:flex;align-items:center;gap:6px;flex-wrap:wrap;flex:none}',
 				'.dswc-pickerTitle{font-weight:600}',
-				'.dswc-muted{color:var(--dsh-color-text-secondary,#888);font-size:11px}',
-				'.dswc-list{flex:1 1 auto;min-height:60px;overflow:auto;border:1px solid var(--dsh-color-border-subtle,rgba(128,128,128,.25));border-radius:6px}',
-				'.dswc-row{display:flex;gap:6px;padding:6px 8px;cursor:pointer;border-bottom:1px solid var(--dsh-color-border-subtle,rgba(128,128,128,.15))}',
+				'.dswc-muted{color:var(--dsw-alias-label-tertiary,#adb2b8);font-size:11px}',
+				'.dswc-list{flex:1 1 auto;min-height:60px;overflow:auto;border:1px solid var(--dsw-alias-border-l4,rgba(128,128,128,.25));border-radius:var(--dsw-radius-md,12px)}',
+				'.dswc-row{display:flex;gap:6px;padding:6px 8px;cursor:pointer;border-bottom:1px solid var(--dsw-alias-border-l4,rgba(128,128,128,.15))}',
 				'.dswc-row:last-child{border-bottom:0}',
-				'.dswc-row:hover{background:var(--dsh-color-bg-hover,rgba(128,128,128,.08))}',
-				'.dswc-role{flex:none;width:30px;font-size:10px;color:var(--dsh-color-text-secondary,#888);padding-top:1px}',
+				'.dswc-row:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(128,128,128,.08))}',
+				'.dswc-role{flex:none;width:44px;font-size:10px;color:var(--dsw-alias-label-tertiary,#adb2b8);padding-top:1px}',
+				// Advanced rows are the machinery behind the conversation, so they
+				// are inked down rather than competing with the actual dialogue.
+				'.dswc-row[data-kind="reasoning"] .dswc-text,.dswc-row[data-kind="tool-call"] .dswc-text,.dswc-row[data-kind="tool-result"] .dswc-text,.dswc-row[data-kind="todo"] .dswc-text,.dswc-row[data-kind="command"] .dswc-text,.dswc-row[data-kind="summary"] .dswc-text{color:var(--dsw-alias-label-tertiary,#adb2b8);font-size:11px}',
+				'.dswc-row[data-kind="reasoning"] .dswc-text{font-style:italic}',
+				'.dswc-row[data-kind="tool-call"] .dswc-text,.dswc-row[data-kind="tool-result"] .dswc-text,.dswc-row[data-kind="command"] .dswc-text{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}',
+				// The question and its answer are the point of the default set, so
+				// they read as slightly more than the surrounding dialogue.
+				'.dswc-row[data-kind="question"] .dswc-text{color:var(--dsw-alias-state-business-primary,#4d6bfe)}',
+				'.dswc-advanced{display:flex;align-items:center;gap:6px;flex:none;font-size:11px;color:var(--dsw-alias-label-tertiary,#adb2b8);cursor:pointer}',
+				'.dswc-advanced:hover{color:var(--dsw-alias-label-secondary,#cfd3d6)}',
 				'.dswc-text{flex:1 1 auto;white-space:pre-wrap;word-break:break-word;max-height:96px;overflow:hidden}',
 				'.dswc-compose{display:flex;flex-direction:column;gap:4px;flex:none}',
-				'.dswc-label{font-size:11px;color:var(--dsh-color-text-secondary,#888)}',
-				'.dswc-question,.dswc-preview{font:inherit;width:100%;box-sizing:border-box;padding:6px;border-radius:6px;border:1px solid var(--dsh-color-border-subtle,rgba(128,128,128,.3));background:var(--dsh-color-bg-input,transparent);color:inherit;resize:vertical}',
+				'.dswc-label{font-size:11px;color:var(--dsw-alias-label-tertiary,#adb2b8)}',
+				'.dswc-question,.dswc-preview{font:inherit;width:100%;box-sizing:border-box;padding:6px;border-radius:var(--dsw-radius-sm,8px);border:1px solid var(--dsw-alias-border-l4,rgba(128,128,128,.3));background:transparent;color:inherit;resize:vertical}',
 				'.dswc-preview{margin:0;max-height:150px;overflow:auto;white-space:pre-wrap;word-break:break-word;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px}',
 				'.dswc-actions{display:flex;gap:6px}',
-				'.dswc-notice{padding:12px;color:var(--dsh-color-text-secondary,#888);display:flex;flex-direction:column;gap:6px}',
-				'.dswc-toast{flex:none;margin:0 8px 8px;padding:6px 8px;border-radius:6px;background:var(--dsh-color-bg-hover,rgba(128,128,128,.14));font-size:11px}',
-				'.dswc-headerButton{display:inline-flex;align-items:center;justify-content:center;padding:4px;border:0;border-radius:5px;background:transparent;color:inherit;cursor:pointer}',
-				'.dswc-headerButton:hover{background:var(--dsh-color-bg-hover,rgba(128,128,128,.12))}',
+				'.dswc-notice{padding:12px;color:var(--dsw-alias-label-tertiary,#adb2b8);display:flex;flex-direction:column;gap:6px}',
+				'.dswc-toast{flex:none;margin:0 8px 8px;padding:6px 8px;border-radius:var(--dsw-radius-sm,8px);background:var(--dsw-alias-interactive-bg-hover,rgba(128,128,128,.14));font-size:11px}',
+				// The header door. Sized and inked like the built-in icon buttons in
+				// that row (24px hit area, 8px radius, muted ink, translucent hover),
+				// rather than inheriting the header's near-white text colour.
+				'.dswc-headerButton{box-sizing:border-box;display:inline-flex;flex:none;align-items:center;justify-content:center;width:24px;height:24px;padding:0;border:0;border-radius:var(--dsw-radius-sm,8px);background:transparent;color:var(--dsw-alias-label-secondary,#cfd3d6);cursor:pointer}',
+				'.dswc-headerButton:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(255,255,255,.08));color:var(--dsw-alias-label-primary,#fff)}',
+				'.dswc-headerButton:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary,#4d6bfe);outline-offset:1px}',
 			].join('\n')
 			document.head.appendChild(tag)
 		}
@@ -808,14 +857,17 @@ window.__ModuleLoader__.load({
 		/**
 		 * Compose the blockquote plus the user's own question.
 		 * @param rows - the selected messages, in log order.
-		 * @param labels - role labels.
+		 * @param labels - role and kind labels.
 		 * @param question - the user's question or instruction.
 		 * @returns the text to fill into the DeepSeek composer.
 		 */
 		function compose(rows, labels, question) {
 			const blocks = []
 			for (const row of rows) {
-				const label = row.role === 'user' ? labels.user : labels.assistant
+				// Every row is labelled by what it is, not just by who said it:
+				// once the advanced switch is on, a quoted tool result and a
+				// quoted answer would otherwise look identical in the blockquote.
+				const label = kindLabel(row, labels)
 				const block = quoteBlock(label, row.text)
 				if (block !== '') blocks.push(block)
 			}
@@ -824,6 +876,21 @@ window.__ModuleLoader__.load({
 			if (quoted === '') return asked
 			if (asked === '') return quoted
 			return quoted + '\n\n---\n\n' + asked
+		}
+
+		/**
+		 * The blockquote label for one row.
+		 * @param row - a picker row.
+		 * @param labels - `{ user, assistant, tool, kind }`.
+		 * @returns the label text.
+		 */
+		function kindLabel(row, labels) {
+			const kind = row.kind ?? row.role
+			if (kind === 'user') return labels.user
+			if (kind === 'assistant') return labels.assistant
+			const named = labels.kind?.[kind]
+			if (named === undefined) return row.role === 'tool' ? labels.tool : labels.assistant
+			return row.role === 'tool' ? labels.tool + ' · ' + named : named
 		}
 
 		/**
@@ -882,21 +949,46 @@ window.__ModuleLoader__.load({
 		//#region ui
 
 		/**
+		 * The chat-bubble glyph this plugin uses for both of its doors.
+		 *
+		 * Drawn to the shell's own icon spec rather than to taste, because the
+		 * icon sits in a row of built-in glyphs and any deviation reads as a
+		 * mistake: a `0 0 16 16` viewBox, a 1px stroke (the icon set's
+		 * `Regular` weight; `Medium` is 1.3), `fill: none` on the frame, and
+		 * `currentColor` throughout so the ink comes from whatever the host
+		 * paints — `--dsw-alias-label-secondary` in the guide's 26px icon box,
+		 * `--dsw-alias-label-tertiary` in the tab title.
+		 *
+		 * @param props - `{ size, className }`; the shell supplies both.
+		 * @returns the glyph.
+		 */
+		function ChatBubbleGlyph(props) {
+			const size = props?.size ?? 16
+			return h('svg', {
+				width: size, height: size, viewBox: '0 0 16 16',
+				className: props?.className,
+				fill: 'none', xmlns: 'http://www.w3.org/2000/svg',
+				strokeWidth: 1,
+				'aria-hidden': 'true',
+			}, [
+				// Frame: a rounded bubble with a tail on the lower left.
+				h('path', {
+					key: 'frame',
+					d: 'M4.5 2.5H11.5C12.6 2.5 13.5 3.4 13.5 4.5V9C13.5 10.1 12.6 11 11.5 11H7.25L4.5 13.25V11H4.5C3.4 11 2.5 10.1 2.5 9V4.5C2.5 3.4 3.4 2.5 4.5 2.5Z',
+					stroke: 'currentColor', strokeLinejoin: 'round',
+				}),
+				// One message line, so the glyph reads as a conversation.
+				h('path', { key: 'line', d: 'M5.5 6.75H10.5', stroke: 'currentColor', strokeLinecap: 'round' }),
+			])
+		}
+
+		/**
 		 * The guide door's artwork. The shell sizes a guide icon itself, so the
 		 * glyph reads the `size`/`className` it is handed.
 		 * @param props - `{ size, className }` from the guide entry.
 		 */
 		function GuideArtwork(props) {
-			const size = props?.size ?? 24
-			return h('svg', {
-				width: size, height: size, viewBox: '0 0 24 24',
-				className: props?.className,
-				fill: 'none', stroke: 'currentColor', strokeWidth: 1.6,
-				strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': 'true',
-			}, [
-				h('path', { key: 'b', d: 'M3 5h18v12H11l-4 3.5V17H3z' }),
-				h('path', { key: 'd', d: 'M8 11h8' }),
-			])
+			return ChatBubbleGlyph(props)
 		}
 
 		/**
@@ -917,6 +1009,7 @@ window.__ModuleLoader__.load({
 			const [loadError, setLoadError] = React.useState('')
 			const [selected, setSelected] = React.useState(() => new Set())
 			const [question, setQuestion] = React.useState('')
+			const [advanced, setAdvanced] = React.useState(false)
 			const [busy, setBusy] = React.useState(false)
 			const [toast, setToast] = React.useState('')
 
@@ -993,7 +1086,9 @@ window.__ModuleLoader__.load({
 				setOverlaySuppressed(pickerOpen)
 			}, [pickerOpen])
 
-			// Read the session's messages when the picker opens.
+			// Read the session's messages when the picker opens, and again when the
+			// advanced switch flips — the host does the filtering, so the two sets
+			// are two requests rather than one payload with rows hidden client-side.
 			React.useEffect(() => {
 				if (!pickerOpen || sessionId === undefined) return undefined
 				let cancelled = false
@@ -1002,7 +1097,9 @@ window.__ModuleLoader__.load({
 				void (async () => {
 					try {
 						const response = await fetch(
-							ROUTES.messages + '?sessionId=' + encodeURIComponent(sessionId),
+							ROUTES.messages
+							+ '?sessionId=' + encodeURIComponent(sessionId)
+							+ (advanced ? '&advanced=1' : ''),
 						)
 						const payload = await response.json()
 						if (cancelled) return
@@ -1021,11 +1118,22 @@ window.__ModuleLoader__.load({
 				return () => {
 					cancelled = true
 				}
-			}, [pickerOpen, sessionId, version])
+			}, [pickerOpen, sessionId, version, advanced])
 
 			const labels = React.useMemo(() => ({
 				user: t('picker.role.user'),
 				assistant: t('picker.role.assistant'),
+				tool: t('picker.role.tool'),
+				kind: {
+					question: t('picker.kind.question'),
+					answer: t('picker.kind.answer'),
+					reasoning: t('picker.kind.reasoning'),
+					'tool-call': t('picker.kind.toolCall'),
+					'tool-result': t('picker.kind.toolResult'),
+					todo: t('picker.kind.todo'),
+					command: t('picker.kind.command'),
+					summary: t('picker.kind.summary'),
+				},
 			}), [t])
 
 			const chosen = React.useMemo(() => {
@@ -1166,13 +1274,14 @@ window.__ModuleLoader__.load({
 				? h('div', { className: 'dswc-notice' }, t('picker.loading'))
 				: messages.length === 0
 					? h('div', { className: 'dswc-notice' }, [
-						h('p', { key: 'a' }, t('picker.empty')),
+						h('p', { key: 'a' }, advanced ? t('picker.emptyAdvanced') : t('picker.empty')),
 						loadError === '' ? null : h('p', { key: 'b', className: 'dswc-muted' }, loadError),
 					])
 					: h('div', { className: 'dswc-list' }, messages.map((row) => h('label', {
 						key: row.seq,
 						className: 'dswc-row',
 						'data-role': row.role,
+						'data-kind': row.kind ?? row.role,
 					}, [
 						h('input', {
 							key: 'box',
@@ -1180,8 +1289,7 @@ window.__ModuleLoader__.load({
 							checked: selected.has(row.seq),
 							onChange: () => toggle(row.seq),
 						}),
-						h('span', { key: 'role', className: 'dswc-role' },
-							row.role === 'user' ? labels.user : labels.assistant),
+						h('span', { key: 'role', className: 'dswc-role' }, kindLabel(row, labels)),
 						h('span', { key: 'text', className: 'dswc-text' }, row.text),
 					])))
 
@@ -1211,6 +1319,26 @@ window.__ModuleLoader__.load({
 							className: 'dswc-button',
 							onClick: () => setVersion((value) => value + 1),
 						}, t('action.refresh')),
+					]),
+					// The advanced switch swaps the whole row set rather than
+					// revealing hidden rows: the host filters, so a tool result the
+					// user never opted into is never sent to the browser at all.
+					h('label', {
+						key: 'advanced',
+						className: 'dswc-advanced',
+						title: t('picker.advancedHint'),
+					}, [
+						h('input', {
+							key: 'box',
+							type: 'checkbox',
+							checked: advanced,
+							onChange: (event) => {
+								setAdvanced(event.target.checked)
+								// Selections refer to rows that may no longer exist.
+								setSelected(new Set())
+							},
+						}),
+						h('span', { key: 'text' }, t('picker.advanced')),
 					]),
 					list,
 					h('div', { key: 'compose', className: 'dswc-compose' }, [
@@ -1253,6 +1381,11 @@ window.__ModuleLoader__.load({
 		/**
 		 * A one-click door in the conversation header, so the tab does not have to
 		 * be reached through the column's guide.
+		 *
+		 * The chrome comes from `.dswc-headerButton`, which copies the built-in
+		 * icon buttons in that row: a 24px square, an 8px radius, muted ink and a
+		 * translucent hover. The glyph is the same 16px/1px bubble the guide uses.
+		 *
 		 * @param props - standard props plus the injected `open`.
 		 */
 		function HeaderButton(props) {
@@ -1264,14 +1397,7 @@ window.__ModuleLoader__.load({
 				title: label,
 				'aria-label': label,
 				onClick: () => props.open(),
-			}, h('svg', {
-				width: 15, height: 15, viewBox: '0 0 24 24',
-				fill: 'none', stroke: 'currentColor', strokeWidth: 1.7,
-				strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': 'true',
-			}, [
-				h('path', { key: 'b', d: 'M3 5h18v12H11l-4 3.5V17H3z' }),
-				h('path', { key: 'd', d: 'M8 11h8' }),
-			]))
+			}, ChatBubbleGlyph({}))
 		}
 
 		/** Register the tab type, its guide door, and its body. */

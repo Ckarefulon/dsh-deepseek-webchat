@@ -18,12 +18,16 @@ import {
   deleteBinding,
   extractMessages,
   findOwner,
+  formatQuestions,
   isHumanUserMessage,
+  isQuestionReply,
   loadGuestSession,
+  questionsOf,
   readBinding,
   readBindings,
   saveGuestSession,
   setStateDir,
+  toolCallBlocks,
   writeBinding,
 } from '../src/index.js'
 
@@ -78,7 +82,7 @@ describe('conversation urls', () => {
 })
 
 describe('message extraction', () => {
-  it('keeps only text blocks, dropping reasoning', () => {
+  it('keeps only text blocks, dropping reasoning by default', () => {
     assert.equal(
       contentText([
         { type: 'reasoning', text: 'private thinking' },
@@ -86,6 +90,26 @@ describe('message extraction', () => {
         { type: 'tool-call', name: 'bash', arguments: '{}' },
       ]),
       'the answer',
+    )
+  })
+
+  it('keeps reasoning only when explicitly asked', () => {
+    const content = [
+      { type: 'reasoning', text: 'private thinking' },
+      { type: 'text', text: 'the answer' },
+    ]
+    assert.equal(contentText(content, { includeReasoning: true }), 'private thinking\nthe answer')
+    assert.equal(contentText(content), 'the answer')
+  })
+
+  it('reads tool-call blocks out of an assistant message', () => {
+    assert.deepEqual(
+      toolCallBlocks([
+        { type: 'text', text: 'working' },
+        { type: 'tool-call', id: 'c1', name: 'bash', arguments: '{"cmd":"ls"}' },
+        { type: 'reasoning', text: 'hmm' },
+      ]),
+      [{ name: 'bash', arguments: '{"cmd":"ls"}' }],
     )
   })
 
@@ -97,7 +121,13 @@ describe('message extraction', () => {
     assert.equal(isHumanUserMessage({}), false)
   })
 
-  it('drops injected prompts, system, developer and tool events', () => {
+  it('recognises a question reply as its own thing', () => {
+    assert.equal(isQuestionReply({ data: { source: { kind: 'user-question-reply' } } }), true)
+    assert.equal(isQuestionReply({ data: { source: { kind: 'user' } } }), false)
+    assert.equal(isQuestionReply({}), false)
+  })
+
+  it('drops injected prompts, system, developer and tool events by default', () => {
     const rows = extractMessages([
       { seq: 1, type: 'user/message', data: { source: { kind: 'agent-instructions' }, content: [{ type: 'text', text: 'SECRET INSTRUCTIONS' }] } },
       { seq: 2, type: 'system/message', data: { content: [{ type: 'text', text: 'system' }] } },
@@ -105,12 +135,75 @@ describe('message extraction', () => {
       { seq: 4, type: 'user/message', data: { source: { kind: 'user' }, content: [{ type: 'text', text: 'hello' }] } },
       { seq: 5, type: 'assistant/message', data: { message: { content: [{ type: 'reasoning', text: 'hmm' }, { type: 'text', text: 'hi there' }] } } },
       { seq: 6, type: 'tool/call', data: { name: 'bash', arguments: '{}' } },
-      { seq: 7, type: 'tool/result', data: { content: [{ type: 'text', text: 'output' }] } },
+      { seq: 7, type: 'tool/result', data: { message: { content: [{ type: 'text', text: 'output' }] } } },
     ])
     assert.deepEqual(rows, [
-      { seq: 4, role: 'user', text: 'hello' },
-      { seq: 5, role: 'assistant', text: 'hi there' },
+      { seq: 4, role: 'user', kind: 'user', text: 'hello' },
+      { seq: 5, role: 'assistant', kind: 'assistant', text: 'hi there' },
     ])
+  })
+
+  it('offers the agent questions and the human answers by default', () => {
+    const rows = extractMessages([
+      { seq: 1, type: 'assistant/message', data: { message: { content: [
+        { type: 'text', text: 'One question first.' },
+        { type: 'tool-call', id: 'c1', name: 'ask_user_question', arguments: '{}' },
+      ] } } },
+      { seq: 2, type: 'tool/call', data: { name: 'ask_user_question', callId: 'c1', arguments: JSON.stringify({ questions: [
+        { id: 'q1', header: 'Confirm', question: 'Which layout?', options: [
+          { label: 'Sidebar', description: 'right column' },
+          { label: 'Center' },
+        ] },
+      ] }) } },
+      { seq: 3, type: 'user/message', data: { source: { kind: 'user-question-reply', callId: 'c1' }, content: [{ type: 'text', text: 'Sidebar, please' }] } },
+    ])
+    assert.deepEqual(rows, [
+      { seq: 1, role: 'assistant', kind: 'assistant', text: 'One question first.' },
+      { seq: 2, role: 'assistant', kind: 'question', text: 'Confirm：Which layout?\n  · Sidebar — right column\n  · Center' },
+      { seq: 3, role: 'user', kind: 'answer', text: 'Sidebar, please' },
+    ])
+  })
+
+  it('does not also list the asking tool call as a tool call', () => {
+    const rows = extractMessages([
+      { seq: 1, type: 'assistant/message', data: { message: { content: [
+        { type: 'tool-call', id: 'c1', name: 'ask_user_question', arguments: '{}' },
+      ] } } },
+      { seq: 2, type: 'tool/call', data: { name: 'ask_user_question', callId: 'c1', arguments: JSON.stringify({ questions: [{ id: 'q', question: 'Q?' }] }) } },
+    ], { advanced: true })
+    assert.deepEqual(rows.map((row) => row.kind), ['question'])
+  })
+
+  it('adds thinking, tool calls, results, todos, commands and summaries when advanced', () => {
+    const events = [
+      { seq: 1, type: 'assistant/message', data: { message: { content: [
+        { type: 'reasoning', text: 'they want X' },
+        { type: 'text', text: 'Sure.' },
+      ] } } },
+      { seq: 2, type: 'tool/call', data: { name: 'bash', callId: 'c2', arguments: '{"cmd":"ls"}' } },
+      { seq: 3, type: 'tool/result', data: { message: { toolCallId: 'c2', role: 'tool', content: [{ type: 'text', text: 'file1\nfile2' }] } } },
+      { seq: 4, type: 'tool/result', data: { message: { toolCallId: 'c3', role: 'tool', content: [] }, error: { name: 'E', code: 'boom' } } },
+      { seq: 5, type: 'todo/write', data: { todos: [
+        { content: 'write code', status: 'completed' },
+        { content: 'test', status: 'in_progress' },
+        { content: 'ship', status: 'pending' },
+      ] } },
+      { seq: 6, type: 'command/run', data: { commandId: 'x', name: 'compact', args: '--now', source: 'user' } },
+      { seq: 7, type: 'compaction/summary', data: { summary: [{ type: 'text', text: 'we did stuff' }] } },
+    ]
+    const rows = extractMessages(events, { advanced: true })
+    assert.deepEqual(rows.map((row) => [row.kind, row.text]), [
+      ['assistant', 'Sure.'],
+      ['reasoning', 'they want X'],
+      ['tool-call', 'bash({"cmd":"ls"})'],
+      ['tool-result', 'file1\nfile2'],
+      ['tool-result', '⚠ {"name":"E","code":"boom"}'],
+      ['todo', '[x] write code\n[~] test\n[ ] ship'],
+      ['command', '/compact --now'],
+      ['summary', 'we did stuff'],
+    ])
+    // The default set is a strict subset: no machinery rows.
+    assert.deepEqual(extractMessages(events).map((row) => row.kind), ['assistant'])
   })
 
   it('skips empty messages and survives junk', () => {
@@ -119,6 +212,46 @@ describe('message extraction', () => {
     assert.deepEqual(
       extractMessages([{ seq: 1, type: 'assistant/message', data: { message: { content: [] } } }]),
       [],
+    )
+    assert.deepEqual(extractMessages('nope'), [])
+  })
+})
+
+describe('question parsing', () => {
+  it('reads a batch with headers, options and multi-select', () => {
+    assert.deepEqual(
+      questionsOf(JSON.stringify({ questions: [
+        { id: 'q1', header: 'Confirm', question: 'Which?', options: [{ label: 'A', description: 'first' }, { label: 'B' }] },
+        { id: 'q2', question: 'Extras?', multi_select: true },
+      ] })),
+      [
+        { question: 'Which?', header: 'Confirm', options: [{ label: 'A', description: 'first' }, { label: 'B' }] },
+        { question: 'Extras?', multiSelect: true },
+      ],
+    )
+  })
+
+  it('returns nothing rather than throwing on junk', () => {
+    assert.deepEqual(questionsOf('not json'), [])
+    assert.deepEqual(questionsOf(''), [])
+    assert.deepEqual(questionsOf(undefined), [])
+    assert.deepEqual(questionsOf('{}'), [])
+    assert.deepEqual(questionsOf('{"questions":[{"id":"q"}]}'), [])
+    assert.deepEqual(questionsOf('{"questions":[null,"x",{"id":"q","question":"  "}]}'), [])
+  })
+
+  it('formats a batch for the picker and the blockquote', () => {
+    assert.equal(
+      formatQuestions(questionsOf(JSON.stringify({ questions: [
+        { id: 'q', header: 'Confirm', question: 'Which?', options: [{ label: 'A', description: 'first' }, { label: 'B' }] },
+      ] }))),
+      'Confirm：Which?\n  · A — first\n  · B',
+    )
+    assert.equal(
+      formatQuestions(questionsOf(JSON.stringify({
+        questions: [{ id: 'q', question: 'Extras?', multi_select: true }],
+      }))),
+      'Extras?\n  · (可多选 / multiple choice)',
     )
   })
 })
