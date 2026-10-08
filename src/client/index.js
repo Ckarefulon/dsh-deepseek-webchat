@@ -331,6 +331,8 @@ window.__ModuleLoader__.load({
 
 		/** Notify every subscriber that the guest state changed. */
 		function notify() {
+			diag.notify += 1
+			diagEvent('notify', { n: diag.notify })
 			for (const watcher of [...watchers]) {
 				try {
 					watcher()
@@ -342,6 +344,71 @@ window.__ModuleLoader__.load({
 
 		/** A pending coalesced notify, so a burst of events re-renders once. */
 		let notifyQueued = false
+
+		/**
+		 * Counters for the diagnostics route.
+		 *
+		 * The guest is a `<webview>` this plugin cannot inspect from outside, so a
+		 * flicker in there is otherwise invisible: the only way to tell a real
+		 * hide/show cycle from a merely redundant one is to count them in the page
+		 * and read the numbers back.
+		 */
+		const diag = {
+			update: 0,
+			shown: 0,
+			hidden: 0,
+			moved: 0,
+			skipped: 0,
+			notify: 0,
+			// A flicker is either the guest being hidden and shown in a loop, or the
+			// panel body being torn down and remounted by the shell. These tell those
+			// apart, which no snapshot of the counters above can.
+			mounts: 0,
+			unmounts: 0,
+			renders: 0,
+			flickers: 0,
+			events: [],
+		}
+
+		/** Recent visibility flips, so a flicker can be detected as a rate. */
+		const flipTimes = []
+
+		/**
+		 * Record a visibility flip, and flag a burst.
+		 *
+		 * A flicker is a rate, so one reading of the counters cannot show it — they
+		 * have to be read against the clock. Three flips within two seconds is taken
+		 * as a burst.
+		 * @param kind - `show` or `hide`.
+		 * @param detail - whatever the caller knows about this flip.
+		 */
+		function noteFlip(kind, detail) {
+			const now = Date.now()
+			flipTimes.push(now)
+			while (flipTimes.length > 0 && now - flipTimes[0] > 2000) flipTimes.shift()
+			if (flipTimes.length < 3) return
+			diag.flickers += 1
+			diagEvent('FLICKER', { kind, flips: flipTimes.length, ...detail })
+		}
+
+		/** Record one visibility transition, keeping only the recent tail. */
+		function diagEvent(kind, detail) {
+			diag.events.push({ t: Date.now(), kind, detail })
+			if (diag.events.length > 40) diag.events.splice(0, diag.events.length - 40)
+		}
+
+		/** Post the counters so the host can serve them from the diag route. */
+		function postDiagnostics(extra) {
+			try {
+				void fetch(ROUTES.diag, {
+					method: 'POST',
+					headers: { 'content-type': 'application/json' },
+					body: JSON.stringify({ ...diag, ...extra }),
+				}).catch(() => undefined)
+			} catch (error) {
+				// Diagnostics must never break the plugin.
+			}
+		}
 
 		/**
 		 * Notify at most once per frame.
@@ -480,12 +547,25 @@ window.__ModuleLoader__.load({
 			document.head.appendChild(tag)
 		}
 
-		/** @returns the document-root container that keeps the guest alive. */
+		/**
+		 * @returns the document-root container that keeps the guest alive.
+		 *
+		 * The stylesheet is injected first, and that is not incidental: without the
+		 * `position: fixed` rule this element is an ordinary block-level div, so a
+		 * bare one appended to `<body>` claims the full document width and shoves
+		 * the whole app sideways — and the guest's own white page sits on top of it.
+		 * That is the "the entire page flashes" symptom, and it appeared whenever the
+		 * guest was rebuilt before the sheet existed.
+		 */
 		function overlayContainer() {
+			ensureStyle()
 			const existing = document.querySelector('[' + OVERLAY_ATTR + ']')
 			if (existing !== null && existing !== undefined) return existing
 			const box = document.createElement('div')
 			box.setAttribute(OVERLAY_ATTR, '')
+			// Hidden at birth so there is never a frame where it is in the document
+			// and visible but not yet sized.
+			box.style.display = 'none'
 			document.body.appendChild(box)
 			return box
 		}
@@ -500,27 +580,56 @@ window.__ModuleLoader__.load({
 		 */
 		function hideOverlay() {
 			if (guest === null) return
-			if (guest.container.style.display === 'none') return
+			if (guest.container.style.display === 'none') {
+				diag.skipped += 1
+				return
+			}
+			diag.hidden += 1
+			diagEvent('hide')
+			noteFlip('hide')
 			guest.container.style.display = 'none'
 		}
 
 		/**
 		 * Park the guest on one measured rectangle.
+		 *
+		 * The order here is load-bearing. The container is `position: fixed` with a
+		 * white background, and a block-level fixed box with `width: auto` spans the
+		 * whole viewport. Making it visible before its geometry is set therefore
+		 * paints a full-window white slab over the app for a frame — which is what
+		 * "the whole page flashes" was. Geometry first, visibility last.
 		 * @param rect - the slot area, in viewport coordinates.
 		 */
 		function showOverlay(rect) {
 			if (guest === null) return
 			const style = guest.container.style
-			// Written only when it changed, for the same reason as hideOverlay.
+			// A zero-sized rectangle is a pane that has not been laid out yet;
+			// parking on it would show a sliver, so wait for the next pass.
+			if (!(rect.width > 0) || !(rect.height > 0)) return
 			const left = rect.left + 'px'
 			const top = rect.top + 'px'
 			const width = rect.width + 'px'
 			const height = rect.height + 'px'
+			const moved = style.left !== left || style.top !== top
+				|| style.width !== width || style.height !== height
+			// Written only when changed: re-setting a property on a <webview>'s
+			// container can still re-composite, which is what a flicker looks like.
 			if (style.left !== left) style.left = left
 			if (style.top !== top) style.top = top
 			if (style.width !== width) style.width = width
 			if (style.height !== height) style.height = height
-			if (style.display !== 'block') style.display = 'block'
+			// Only now, with a real size in place, is it safe to show.
+			if (style.display !== 'block') {
+				diag.shown += 1
+				diagEvent('show', { left, top, width, height })
+				noteFlip('show', { width, height })
+				style.display = 'block'
+			} else if (moved) {
+				diag.moved += 1
+				diagEvent('move', { left, top, width, height })
+			} else {
+				diag.skipped += 1
+			}
 		}
 
 		/**
@@ -1409,6 +1518,19 @@ window.__ModuleLoader__.load({
 				}
 			}, [])
 
+			// Count mounts and renders. A flicker of the panel area is either the
+			// guest being hidden and shown in a loop, or the shell tearing this body
+			// down and building it again; only these counters distinguish the two.
+			diag.renders += 1
+			React.useEffect(() => {
+				diag.mounts += 1
+				diagEvent('mount', { sessionId: String(sessionId ?? '') })
+				return () => {
+					diag.unmounts += 1
+					diagEvent('unmount', { sessionId: String(sessionId ?? '') })
+				}
+			}, [])
+
 			// Bring the guest up once the shell has a bridge for it.
 			React.useEffect(() => {
 				if (!hasBridge()) return
@@ -1448,7 +1570,9 @@ window.__ModuleLoader__.load({
 				const host = hostRef.current
 				if (host === null) return undefined
 				const update = () => {
+					diag.update += 1
 					if (overlaySuppressed || guest === null) {
+						diagEvent('update', { why: overlaySuppressed ? 'suppressed' : 'no-guest' })
 						hideOverlay()
 						return
 					}
@@ -1458,10 +1582,12 @@ window.__ModuleLoader__.load({
 					// is the right test, and `offsetParent` is not (it is null for a
 					// fixed-position ancestor even when the element is plainly
 					// visible). The size guard rejects a pane mid-layout.
-					const visible = host.getClientRects().length > 0
-						&& rect.width > 2
-						&& rect.height > 2
+					const rects = host.getClientRects().length
+					const visible = rects > 0 && rect.width > 2 && rect.height > 2
 					if (!visible) {
+						diagEvent('update', {
+							why: 'not-visible', rects, w: rect.width, h: rect.height,
+						})
 						hideOverlay()
 						return
 					}
@@ -1472,10 +1598,40 @@ window.__ModuleLoader__.load({
 				if (observer !== null) observer.observe(host)
 				window.addEventListener('resize', update)
 				const timer = setInterval(update, 250)
+				// Report on ourselves while this pane is mounted, so a flicker can be
+				// measured from outside the guest rather than guessed at. The pane's
+				// own geometry is included: a host rect that changes every tick is a
+				// different problem from one that never changes at all.
+				const snapshot = () => {
+					let url = ''
+					try {
+						url = guest === null ? '' : guest.element.getURL()
+					} catch (error) {
+						url = ''
+					}
+					const rect = host.getBoundingClientRect()
+					return {
+						url,
+						suppressed: overlaySuppressed,
+						display: guest === null ? '' : guest.container.style.display,
+						host: {
+							l: Math.round(rect.left), t: Math.round(rect.top),
+							w: Math.round(rect.width), h: Math.round(rect.height),
+						},
+						rects: host.getClientRects().length,
+						pane: pickerOpen,
+					}
+				}
+				const reporter = setInterval(() => postDiagnostics(snapshot()), 1000)
+				postDiagnostics(snapshot())
 				return () => {
 					if (observer !== null) observer.disconnect()
 					window.removeEventListener('resize', update)
 					clearInterval(timer)
+					clearInterval(reporter)
+					// One last report, so the state at teardown survives: if the pane is
+					// being remounted in a loop, this is the record of it.
+					postDiagnostics({ ...snapshot(), teardown: true })
 					hideOverlay()
 				}
 			}, [pickerOpen])

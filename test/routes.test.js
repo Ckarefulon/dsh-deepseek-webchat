@@ -217,6 +217,46 @@ describe('binding route', () => {
   })
 })
 
+describe('diagnostics route', () => {
+  it('reports nothing before the browser half has said anything', async () => {
+    const host = hostWith(undefined)
+    const { status, body } = await host.call(ROUTES.diag)
+    assert.equal(status, 200)
+    assert.equal(body.ok, true)
+    assert.equal(body.diagnostics, null)
+    assert.deepEqual(body.recent, [])
+  })
+
+  it('stores what the browser half posts, and reads it back', async () => {
+    const host = hostWith(undefined)
+    await host.call(ROUTES.diag, {
+      method: 'POST',
+      body: { shown: 3, hidden: 2, mounts: 1, events: [{ t: 100, kind: 'show' }] },
+    })
+    const { body } = await host.call(ROUTES.diag)
+    assert.equal(body.diagnostics.shown, 3)
+    assert.equal(body.diagnostics.hidden, 2)
+    // The host stamps it, so a stale snapshot is recognisable.
+    assert.equal(typeof body.diagnostics.at, 'number')
+  })
+
+  it('filters events by ?since so a reproduced flicker reads clean', async () => {
+    const host = hostWith(undefined)
+    await host.call(ROUTES.diag, {
+      method: 'POST',
+      body: { events: [{ t: 100, kind: 'old' }, { t: 300, kind: 'new' }] },
+    })
+    const { body } = await host.call(ROUTES.diag, { query: 'since=200' })
+    assert.deepEqual(body.recent, [{ t: 300, kind: 'new' }])
+  })
+
+  it('rejects a body-less post', async () => {
+    const host = hostWith(undefined)
+    const { status } = await host.call(ROUTES.diag, { method: 'POST' })
+    assert.equal(status, 400)
+  })
+})
+
 describe('session snapshot routes', () => {
   it('saves and restores the guest login state', async () => {
     const host = hostWith(undefined)

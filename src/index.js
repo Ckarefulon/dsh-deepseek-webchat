@@ -91,7 +91,19 @@ export const ROUTES = {
   binding: '/api/dsh-deepseek-webchat/binding',
   sessionRestore: '/api/dsh-deepseek-webchat/session/restore',
   sessionSave: '/api/dsh-deepseek-webchat/session/save',
+  diag: '/api/dsh-deepseek-webchat/diag',
 }
+
+/**
+ * The most recent diagnostics snapshot posted by the browser half.
+ *
+ * The guest lives in a `<webview>` this plugin cannot inspect from the outside,
+ * so when something misbehaves in there the only way to see it is to have the
+ * page report on itself. The browser half posts counters and the last few
+ * visibility transitions; this holds them until someone reads the route.
+ * @type {object|null}
+ */
+let lastDiagnostics = null
 
 /**
  * The plugin's private state directory. Overridable so tests never touch the
@@ -786,6 +798,40 @@ export function apply(ctx) {
       json(res, 200, { ok: true, changed, deepseekSessionId: body.deepseekSessionId })
     },
   }), 'deepseek-webchat: binding route')
+
+  // Diagnostics the browser half reports about itself. Read-only in effect: a
+  // GET returns the last snapshot, a POST replaces it. Nothing here is needed
+  // for the plugin to work, which is why it is one small route rather than
+  // anything woven into the rest.
+  ctx.effect(() => ctx.webServer.register({
+    kind: 'exact',
+    path: ROUTES.diag,
+    handler: async (req, res) => {
+      if (req.method === 'GET') {
+        // `?since=<epochMs>` returns only the events after that mark, so a
+        // deliberately reproduced flicker can be read without the noise of
+        // everything that happened before it.
+        const since = queryParam(req.url, 'since')
+        const cut = since === undefined ? 0 : Number(since)
+        const all = lastDiagnostics === null || !Array.isArray(lastDiagnostics.events)
+          ? []
+          : lastDiagnostics.events
+        json(res, 200, {
+          ok: true,
+          diagnostics: lastDiagnostics,
+          recent: Number.isFinite(cut) ? all.filter((event) => event.t > cut) : all,
+        })
+        return
+      }
+      const body = await readJsonBody(req)
+      if (body === null) {
+        json(res, 400, { ok: false, error: 'a JSON body is required' })
+        return
+      }
+      lastDiagnostics = { at: Date.now(), ...body }
+      json(res, 200, { ok: true })
+    },
+  }), 'deepseek-webchat: diagnostics route')
 
   ctx.effect(() => ctx.webServer.register({
     kind: 'exact',

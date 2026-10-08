@@ -398,18 +398,52 @@ describe('desktop guest channel', () => {
     // every notify().
     const at = bundle.indexOf('const update = () => {')
     assert.ok(at > -1)
-    const tail = bundle.slice(at, at + 1200)
+    // Anchor on the effect's own teardown rather than a fixed window: the body
+    // grows as the effect gains instrumentation, and a byte count silently starts
+    // matching the wrong `}, [...])` once it does.
+    const tail = bundle.slice(at, at + 4000)
     const deps = tail.match(/\}, \[([^\]]*)\]\)/)
     assert.ok(deps !== null, 'could not find the parking effect dependencies')
     assert.equal(deps[1].includes('version'), false, 'parking must not depend on version')
     assert.ok(deps[1].includes('pickerOpen'))
   })
 
+  it('sizes the guest before it is shown', () => {
+    // The container is position:fixed with a white background, and a block-level
+    // fixed box with width:auto spans the whole viewport. Showing it before its
+    // geometry is set paints a full-window white slab over the app — the "whole
+    // page flashes" symptom.
+    const at = bundle.indexOf('function showOverlay(')
+    assert.ok(at > -1)
+    const body = bundle.slice(at, bundle.indexOf('function setOverlaySuppressed'))
+    const setWidth = body.indexOf('style.width = width')
+    const show = body.indexOf("style.display = 'block'")
+    assert.ok(setWidth > -1 && show > -1, 'could not find both writes')
+    assert.ok(setWidth < show, 'geometry must be written before the guest is shown')
+    // A zero-sized pane is not parked on at all.
+    assert.ok(body.includes('if (!(rect.width > 0) || !(rect.height > 0)) return'))
+  })
+
+  it('injects the stylesheet before the container can exist', () => {
+    // Without the position:fixed rule the container is an ordinary block-level
+    // div, so a bare one on <body> claims the full document width and shoves the
+    // app sideways. It must therefore never be created unstyled.
+    const at = bundle.indexOf('function overlayContainer()')
+    assert.ok(at > -1)
+    const body = bundle.slice(at, at + 600)
+    assert.ok(body.includes('ensureStyle()'), 'overlayContainer must inject the sheet first')
+    assert.ok(body.includes("box.style.display = 'none'"), 'the container must start hidden')
+  })
+
   it('keeps hide and show idempotent so a redundant pass cannot blink', () => {
-    // Writing `display` on a <webview> that is already in that state still makes
-    // it re-composite, which reads as a flicker.
-    assert.ok(bundle.includes("if (guest.container.style.display === 'none') return"))
-    assert.ok(bundle.includes("if (style.display !== 'block') style.display = 'block'"))
+    // Re-setting a property that already holds that value on a <webview>'s
+    // container can still re-composite, which reads as a flicker.
+    const at = bundle.indexOf('function hideOverlay()')
+    assert.ok(at > -1)
+    const body = bundle.slice(at, bundle.indexOf('function showOverlay('))
+    assert.ok(body.includes("if (guest.container.style.display === 'none')"), 'hide must check first')
+    assert.ok(body.indexOf('return') < body.indexOf("style.display = 'none'"), 'the check must return early')
+    assert.ok(bundle.includes("if (style.display !== 'block') {"))
   })
 
   it('does not blank the message list on a guest notification', () => {
