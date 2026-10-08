@@ -441,22 +441,39 @@ describe('desktop guest channel', () => {
     assert.ok(body.includes('if (!(rect.width > 0) || !(rect.height > 0)) return'))
   })
 
-  it('needs two bad measurements before believing the pane is gone', () => {
-    // The container is position:fixed at the document root, so showing it can
-    // change the document's layout and make the measured rectangle read zero on
-    // the next pass. Hiding on that zero — then measuring a real rectangle once
-    // hidden — is a self-feeding show/hide oscillation at roughly 5 Hz, which is
-    // the flicker that was reported, and it happened even with the picker shut.
-    // One perturbed reading must not be able to drive a hide.
-    const at = bundle.indexOf('const rects = host.getClientRects().length')
+  it('drives visibility from the tab record, not from measuring the pane', () => {
+    // The flicker was a feedback loop: the guest sits in a position:fixed
+    // container covering the host element, so showing it could make that element
+    // measure empty, which hid the guest, which made it measure fine again. A
+    // signal derived from the thing it controls oscillates. The sidebar already
+    // publishes `tab.visible`, so the parking code must consult that instead.
+    assert.ok(bundle.includes('tabInfo?.tab?.visible'), 'the tab visibility flag is not read')
+    const at = bundle.indexOf('const update = () => {')
     assert.ok(at > -1)
-    const body = bundle.slice(at, at + 900)
-    assert.ok(body.includes('misses += 1'), 'the miss counter is gone')
-    assert.ok(
-      /if \(misses >= 2\) hideOverlay\(\)/.test(body),
-      'a single bad reading must not hide the guest',
+    const body = bundle.slice(at, at + 1400)
+    // A zero rectangle must not hide: it means "not laid out yet".
+    assert.equal(
+      /not-laid-out[\s\S]{0,200}?hideOverlay\(\)/.test(body),
+      false,
+      'an empty measurement must not hide the guest',
     )
-    assert.ok(body.includes('misses = 0'), 'a good reading must clear the miss count')
+    assert.ok(body.includes('why: \'not-laid-out\''))
+  })
+
+  it('hides the guest when the tab is not the one on screen', () => {
+    const at = bundle.indexOf('React.useEffect(() => {')
+    const park = bundle.indexOf('const update = () => {')
+    assert.ok(park > -1)
+    const head = bundle.slice(Math.max(0, park - 700), park)
+    assert.ok(
+      /if \(!tabVisible\) \{[\s\S]{0,80}?hideOverlay\(\)/.test(head),
+      'a hidden tab must hide the guest',
+    )
+    // And it must re-park when the tab comes back.
+    const deps = bundle.slice(park, park + 4000).match(/\}, \[([^\]]*)\]\)/)
+    assert.ok(deps !== null)
+    assert.ok(deps[1].includes('tabVisible'), 'the parking effect must follow tab visibility')
+    assert.ok(deps[1].includes('pickerOpen'))
   })
 
   it('rounds the measured rectangle before comparing it to the style', () => {

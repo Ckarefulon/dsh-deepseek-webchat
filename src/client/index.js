@@ -368,6 +368,7 @@ window.__ModuleLoader__.load({
 			moved: 0,
 			skipped: 0,
 			misses: 0,
+			hits: 0,
 			notify: 0,
 			// A flicker is either the guest being hidden and shown in a loop, or the
 			// panel body being torn down and remounted by the shell. These tell those
@@ -1511,6 +1512,10 @@ window.__ModuleLoader__.load({
 			const useTabInfo = props.useTabInfo
 			const tabInfo = typeof useTabInfo === 'function' ? useTabInfo() : undefined
 			const sessionId = props.sessionId ?? tabInfo?.tab?.sessionId
+			// The framework's own answer to "is this tab the one on screen". Guarded
+			// with `!== false` so a shell that does not publish the flag keeps the
+			// old always-park behaviour rather than hiding the guest forever.
+			const tabVisible = tabInfo?.tab?.visible !== false
 			const t = props.t ?? fallbackTranslate()
 
 			const hostRef = React.useRef(null)
@@ -1584,24 +1589,28 @@ window.__ModuleLoader__.load({
 
 			// Park the guest on the measured area, and keep it parked.
 			//
-			// Depends on `pickerOpen` alone, deliberately not on `version`: this
-			// effect tears down with hideOverlay() and re-runs with showOverlay(),
-			// so re-running it is a hide/show cycle on a `<webview>`.
+			// Visibility comes from the framework, never from measuring. The tab
+			// record carries `visible`, which the sidebar computes as "this tab is
+			// the one on screen" — exactly the question. The old code inferred it
+			// from the host element's own rectangle, and that was the flicker: the
+			// guest is parked in a `position:fixed` container covering that very
+			// element, so showing the guest could make it measure empty, which hid
+			// the guest, which made it measure fine again. A signal derived from
+			// the thing it controls oscillates; rounding and hysteresis only move
+			// the loop around.
 			//
-			// `misses` is the important part. The container is `position: fixed`
-			// and lives at the document root, so showing it changes the document's
-			// own layout — which can make the very rectangle being measured read
-			// zero on the next pass. Hiding on that zero, then re-measuring a real
-			// rectangle once hidden, is a self-feeding oscillation: show -> measure
-			// 0 -> hide -> measure real -> show, forever, roughly five times a
-			// second. That is exactly the flicker that was reported, and it is why
-			// it happened even with the picker closed. Requiring the pane to read
-			// as gone twice in a row means a single perturbed measurement can no
-			// longer drive a hide.
+			// Geometry is now read solely to place the guest. A zero rectangle means
+			// "not laid out yet — wait", and is not a reason to hide.
+			//
+			// Depends on `pickerOpen` and `tabVisible` alone: re-running this effect
+			// is itself a hide/show cycle.
 			React.useEffect(() => {
+				if (!tabVisible) {
+					hideOverlay()
+					return undefined
+				}
 				const host = hostRef.current
 				if (host === null) return undefined
-				let misses = 0
 				const update = () => {
 					diag.update += 1
 					if (overlaySuppressed || guest === null) {
@@ -1610,25 +1619,15 @@ window.__ModuleLoader__.load({
 						return
 					}
 					const rect = host.getBoundingClientRect()
-					// `getClientRects()` is empty when the host or any ancestor is
-					// `display: none`, which is how an unselected pane hides — so it
-					// is the right test, and `offsetParent` is not (it is null for a
-					// fixed-position ancestor even when the element is plainly
-					// visible). The size guard rejects a pane mid-layout.
 					const rects = host.getClientRects().length
-					const visible = rects > 0 && rect.width > 2 && rect.height > 2
-					if (!visible) {
-						// One bad reading is not proof the pane is gone; two in a row
-						// is. Until then, leave the guest exactly as it is.
-						misses += 1
+					if (rects === 0 || !(rect.width > 2) || !(rect.height > 2)) {
 						diag.misses += 1
 						diagEvent('update', {
-							why: 'not-visible', rects, w: rect.width, h: rect.height, misses,
+							why: 'not-laid-out', rects, w: rect.width, h: rect.height,
 						})
-						if (misses >= 2) hideOverlay()
 						return
 					}
-					misses = 0
+					diag.hits += 1
 					showOverlay(rect)
 				}
 				update()
@@ -1672,7 +1671,7 @@ window.__ModuleLoader__.load({
 					postDiagnostics({ ...snapshot(), teardown: true })
 					hideOverlay()
 				}
-			}, [pickerOpen])
+			}, [pickerOpen, tabVisible])
 
 			// Hide the guest behind the picker.
 			React.useEffect(() => {
