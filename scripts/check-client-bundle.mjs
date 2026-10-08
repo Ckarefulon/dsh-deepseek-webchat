@@ -84,6 +84,13 @@ const patchOk = typeof patch !== 'string' || existsSync(join(pkgRoot, patch))
 
 // The loader passes `require` only — no `module` — so the factory must declare
 // its own, or the browser half dies with "module is not defined" at load time.
+// The loader passes `require` only — no `module` — so a bundle using the classic
+// shape must declare its own, or it dies with "module is not defined" at load
+// time. Only checked when the bundle uses `module.exports` at all: one written
+// as a bare IIFE returning its value needs no declaration, and several
+// third-party plugins are exactly that. Flagging them would be a false alarm
+// about someone else's working package.
+const usesModuleExports = /module\.exports/.test(bundle)
 const declaresModule = /(?:const|let|var)\s+module\s*=\s*\{\s*exports\s*:\s*\{\s*\}\s*\}/.test(bundle)
 const returnsExports = /return module\.exports/.test(bundle)
 const registersId = bundle.includes(`id: '${pkg.name}'`) || bundle.includes(`id: "${pkg.name}"`)
@@ -101,8 +108,10 @@ console.log('')
 
 const problems = []
 if (!patchOk) problems.push('dsh.bundle.patch points at a file that does not exist')
-if (!declaresModule) problems.push('bundle does not declare `var module = { exports: {} }` (the loader passes require only)')
-if (!returnsExports) problems.push('bundle does not `return module.exports`')
+if (usesModuleExports && !declaresModule) {
+  problems.push('bundle uses module.exports but never declares `var module = { exports: {} }`')
+}
+if (usesModuleExports && !returnsExports) problems.push('bundle does not `return module.exports`')
 if (!registersId) problems.push(`bundle does not register id ${pkg.name}`)
 
 if (problems.length > 0) {

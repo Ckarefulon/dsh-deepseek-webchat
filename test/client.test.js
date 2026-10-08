@@ -146,6 +146,23 @@ describe('browser bundle', () => {
       '@deepseek-ai/dsh-client-ui-sidebar-right',
     ])
   })
+
+  it('is valid JavaScript and valid UTF-8', () => {
+    // A tool that rewrites the file without preserving its encoding turns every
+    // non-ASCII character into mojibake, which is *also* a syntax error once a
+    // byte lands somewhere a string literal cannot hold it. client-modules
+    // composes this bundle at Host boot, so that fails the whole harness rather
+    // than just this plugin — worth an explicit, named check rather than a
+    // generic parse failure somewhere downstream.
+    const source = readFileSync(join(root, 'lib', 'client.js'), 'utf8')
+    assert.equal(source.includes('\uFFFD'), false, 'the bundle contains U+FFFD replacement characters')
+    // Sequences this machine's PowerShell round-trip produced from UTF-8 Chinese.
+    assert.equal(/鐗|缃戦|鈥|锛|鍜|浣|绋/.test(source), false, 'the bundle contains mojibake')
+    assert.ok((source.match(/[\u4e00-\u9fff]/g) ?? []).length > 200, 'the Chinese copy is missing')
+    // Parsing is the real syntax test; `loadBundle` above only exercises the path
+    // it executes, and a broken character can sit outside that.
+    assert.doesNotThrow(() => new Function(source))
+  })
 })
 
 describe('registrations', () => {
