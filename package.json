@@ -1,6 +1,6 @@
 {
   "name": "@ckarefulon/dsh-deepseek-webchat",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "Embeds the official chat.deepseek.com web app in a DSH sidebar tab through the desktop shell's native browser guest, binds one DeepSeek conversation per DSH Session, and sends selected DSH context into the DeepSeek composer as a blockquote.",
   "keywords": [
     "dsh",

@@ -459,6 +459,29 @@ describe('desktop guest channel', () => {
     assert.ok(body.includes('misses = 0'), 'a good reading must clear the miss count')
   })
 
+  it('rounds the measured rectangle before comparing it to the style', () => {
+    // `getBoundingClientRect()` returns fractions (705.4000244140625) while the
+    // style object returns the browser's normalised form. Comparing the raw float
+    // string against that never matches, so every pass rewrote all four
+    // properties — and on a <webview> a geometry write re-composites. That was
+    // four writes a second, which is a flicker, on a rectangle that had not
+    // actually changed at all. Rounding makes an unchanged rect compare equal.
+    const at = bundle.indexOf('function showOverlay(')
+    assert.ok(at > -1)
+    const body = bundle.slice(at, bundle.indexOf('function setOverlaySuppressed'))
+    for (const axis of ['rect.left', 'rect.top', 'rect.width', 'rect.height']) {
+      assert.ok(
+        body.includes(`Math.round(${axis})`),
+        `${axis} must be rounded before it is written`,
+      )
+    }
+    assert.equal(
+      /const (left|top|width|height) = rect\.(left|top|width|height) \+ 'px'/.test(body),
+      false,
+      'a raw fractional rect is being written again',
+    )
+  })
+
   it('takes the container out of the page layout', () => {
     // What made the rectangle unreliable in the first place.
     const at = bundle.indexOf('[' + "' + OVERLAY_ATTR + '" + ']')

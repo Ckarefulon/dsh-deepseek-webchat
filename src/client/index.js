@@ -620,14 +620,23 @@ window.__ModuleLoader__.load({
 			// A zero-sized rectangle is a pane that has not been laid out yet;
 			// parking on it would show a sliver, so wait for the next pass.
 			if (!(rect.width > 0) || !(rect.height > 0)) return
-			const left = rect.left + 'px'
-			const top = rect.top + 'px'
-			const width = rect.width + 'px'
-			const height = rect.height + 'px'
+			// Rounded to whole pixels before anything is written.
+			//
+			// `getBoundingClientRect()` returns fractions (705.4000244140625), while
+			// the style object hands back the browser's own normalised form. Comparing
+			// the raw float string against that never matches, so every single pass
+			// looked like a change and rewrote all four properties — and on a
+			// `<webview>` a geometry write re-composites. Four writes a second is the
+			// flicker that was still visible after the hide/show loop was fixed.
+			// Rounding makes an unchanged rectangle compare equal, so it is written
+			// once and then left alone.
+			const left = Math.round(rect.left) + 'px'
+			const top = Math.round(rect.top) + 'px'
+			const width = Math.round(rect.width) + 'px'
+			const height = Math.round(rect.height) + 'px'
 			const moved = style.left !== left || style.top !== top
 				|| style.width !== width || style.height !== height
-			// Written only when changed: re-setting a property on a <webview>'s
-			// container can still re-composite, which is what a flicker looks like.
+			// Written only when it actually changed.
 			if (style.left !== left) style.left = left
 			if (style.top !== top) style.top = top
 			if (style.width !== width) style.width = width
