@@ -441,6 +441,31 @@ describe('desktop guest channel', () => {
     assert.ok(body.includes('if (!(rect.width > 0) || !(rect.height > 0)) return'))
   })
 
+  it('needs two bad measurements before believing the pane is gone', () => {
+    // The container is position:fixed at the document root, so showing it can
+    // change the document's layout and make the measured rectangle read zero on
+    // the next pass. Hiding on that zero — then measuring a real rectangle once
+    // hidden — is a self-feeding show/hide oscillation at roughly 5 Hz, which is
+    // the flicker that was reported, and it happened even with the picker shut.
+    // One perturbed reading must not be able to drive a hide.
+    const at = bundle.indexOf('const rects = host.getClientRects().length')
+    assert.ok(at > -1)
+    const body = bundle.slice(at, at + 900)
+    assert.ok(body.includes('misses += 1'), 'the miss counter is gone')
+    assert.ok(
+      /if \(misses >= 2\) hideOverlay\(\)/.test(body),
+      'a single bad reading must not hide the guest',
+    )
+    assert.ok(body.includes('misses = 0'), 'a good reading must clear the miss count')
+  })
+
+  it('takes the container out of the page layout', () => {
+    // What made the rectangle unreliable in the first place.
+    const at = bundle.indexOf('[' + "' + OVERLAY_ATTR + '" + ']')
+    assert.ok(at > -1)
+    assert.ok(bundle.includes('contain:layout size paint style'))
+  })
+
   it('injects the stylesheet before the container can exist', () => {
     // Without the position:fixed rule the container is an ordinary block-level
     // div, so a bare one on <body> claims the full document width and shoves the
