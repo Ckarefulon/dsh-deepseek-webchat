@@ -301,6 +301,44 @@ describe('picker affordances', () => {
   })
 })
 
+describe('following the DSH Session', () => {
+  it('does not re-focus on every guest notification', () => {
+    // The follow effect used to depend on `version`, which every notify() bumps —
+    // and notify() fires from the guest's own navigation events. That made the
+    // effect navigate, which notified, which re-ran the effect: an endless
+    // navigate/notify ping-pong the user saw as the panel flickering. It must
+    // depend on the session alone.
+    // Anchor on the call site, not on the function name: the definition is a
+    // separate occurrence and would otherwise be counted as a second effect.
+    const at = bundle.indexOf('await focusSession(sessionId)')
+    assert.ok(at > -1)
+    // Walk back to the effect that owns this call, then forward to its deps.
+    const start = bundle.lastIndexOf('React.useEffect(', at)
+    assert.ok(start > -1)
+    assert.ok(start < at)
+    const tail = bundle.slice(at, at + 400)
+    const deps = tail.match(/\}, \[([^\]]*)\]\)/)
+    assert.ok(deps !== null, 'could not find the dependency list')
+    assert.equal(deps[1].includes('version'), false, 'the follow effect must not depend on version')
+    assert.ok(deps[1].includes('sessionId'))
+  })
+
+  it('never lets a navigation event clear the settle marker', () => {
+    // observeUrl trusts a URL only once it has read it twice. Clearing the marker
+    // on every navigation event meant a still page never settled and its
+    // conversation was never bound.
+    const at = bundle.indexOf("'did-navigate', 'did-navigate-in-page'")
+    assert.ok(at > -1)
+    const body = bundle.slice(at, at + 400)
+    assert.equal(body.includes('lastSeenUrl = '), false)
+  })
+
+  it('reaches a bound conversation from anywhere else', () => {
+    // Including DeepSeek's root, which does not always redirect into one.
+    assert.ok(bundle.includes('navigate(conversationUrl(bound))'))
+  })
+})
+
 describe('desktop guest channel', () => {
   it('goes through the shell bridge rather than an iframe', () => {
     assert.ok(bundle.includes('globalThis.dshDesktop'))
