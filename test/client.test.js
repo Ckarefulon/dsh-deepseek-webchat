@@ -391,6 +391,48 @@ describe('desktop guest channel', () => {
     assert.ok(bundle.includes('sessionSave'))
   })
 
+  it('never parks the guest from an effect that can re-run on guest state', () => {
+    // This effect tears down with hideOverlay() and re-runs with showOverlay(),
+    // so re-running it is a hide/show cycle on a <webview> — a visible flicker.
+    // It must depend on the picker alone, never on `version`, which is bumped by
+    // every notify().
+    const at = bundle.indexOf('const update = () => {')
+    assert.ok(at > -1)
+    const tail = bundle.slice(at, at + 1200)
+    const deps = tail.match(/\}, \[([^\]]*)\]\)/)
+    assert.ok(deps !== null, 'could not find the parking effect dependencies')
+    assert.equal(deps[1].includes('version'), false, 'parking must not depend on version')
+    assert.ok(deps[1].includes('pickerOpen'))
+  })
+
+  it('keeps hide and show idempotent so a redundant pass cannot blink', () => {
+    // Writing `display` on a <webview> that is already in that state still makes
+    // it re-composite, which reads as a flicker.
+    assert.ok(bundle.includes("if (guest.container.style.display === 'none') return"))
+    assert.ok(bundle.includes("if (style.display !== 'block') style.display = 'block'"))
+  })
+
+  it('does not blank the message list on a guest notification', () => {
+    // Every pass of the fetch effect starts by setting the list to null, so
+    // depending on `version` wiped the list whenever a binding landed.
+    const at = bundle.indexOf('setMessages(null)')
+    assert.ok(at > -1)
+    const tail = bundle.slice(at, at + 2600)
+    const deps = tail.match(/\}, \[([^\]]*)\]\)/)
+    assert.ok(deps !== null, 'could not find the message effect dependencies')
+    assert.equal(deps[1].includes('version'), false, 'the message fetch must not depend on version')
+    assert.ok(deps[1].includes('reload'))
+  })
+
+  it('has an explicit re-read control of its own', () => {
+    assert.ok(bundle.includes('setReload((value) => value + 1)'))
+  })
+
+  it('coalesces a burst of notifications into one render', () => {
+    assert.ok(bundle.includes('function notifySoon'))
+    assert.ok(bundle.includes('queueMicrotask'))
+  })
+
   it('confines the login snapshot to the DeepSeek origin', () => {
     // The guest starts on about:blank#<lease>, where localStorage throws and
     // document.cookie is empty. Saving that would erase the real snapshot, so

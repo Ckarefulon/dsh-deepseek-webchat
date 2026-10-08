@@ -340,6 +340,26 @@ window.__ModuleLoader__.load({
 			}
 		}
 
+		/** A pending coalesced notify, so a burst of events re-renders once. */
+		let notifyQueued = false
+
+		/**
+		 * Notify at most once per frame.
+		 *
+		 * A single page load raises several of the events that call this
+		 * (`did-navigate`, `did-navigate-in-page`, `did-finish-load`, plus the
+		 * poll), and each one re-rendered the whole panel. Coalescing them keeps a
+		 * burst from being a burst of renders — which is what a flicker is.
+		 */
+		function notifySoon() {
+			if (notifyQueued) return
+			notifyQueued = true
+			queueMicrotask(() => {
+				notifyQueued = false
+				notify()
+			})
+		}
+
 		/** @returns the desktop browser bridge, or undefined off the desktop shell. */
 		function bridge() {
 			const carrier = globalThis.dshDesktop
@@ -470,9 +490,17 @@ window.__ModuleLoader__.load({
 			return box
 		}
 
-		/** Hide the guest without unmounting it. */
+		/**
+		 * Hide the guest without unmounting it.
+		 *
+		 * Idempotent on purpose: setting `display` on a `<webview>` that is already
+		 * in that state still makes the guest re-composite, which reads as a
+		 * flicker. Any redundant pass over the parking code must therefore be a
+		 * no-op rather than a hide/show cycle.
+		 */
 		function hideOverlay() {
 			if (guest === null) return
+			if (guest.container.style.display === 'none') return
 			guest.container.style.display = 'none'
 		}
 
@@ -483,11 +511,16 @@ window.__ModuleLoader__.load({
 		function showOverlay(rect) {
 			if (guest === null) return
 			const style = guest.container.style
-			style.left = rect.left + 'px'
-			style.top = rect.top + 'px'
-			style.width = rect.width + 'px'
-			style.height = rect.height + 'px'
-			style.display = 'block'
+			// Written only when it changed, for the same reason as hideOverlay.
+			const left = rect.left + 'px'
+			const top = rect.top + 'px'
+			const width = rect.width + 'px'
+			const height = rect.height + 'px'
+			if (style.left !== left) style.left = left
+			if (style.top !== top) style.top = top
+			if (style.width !== width) style.width = width
+			if (style.height !== height) style.height = height
+			if (style.display !== 'block') style.display = 'block'
 		}
 
 		/**
@@ -646,7 +679,7 @@ window.__ModuleLoader__.load({
 					? payload.deepseekSessionId
 					: deepseekSessionId
 				boundPairs.add(dshSessionId + '\u0000' + stored)
-				notify()
+				notifySoon()
 			} catch (error) {
 				// The next observation retries, so leave the claim off.
 			}
@@ -1361,6 +1394,10 @@ window.__ModuleLoader__.load({
 			const [lastN, setLastN] = React.useState(10)
 			const [busy, setBusy] = React.useState(false)
 			const [toast, setToast] = React.useState('')
+			// Bumped only by the explicit 「重新读取」 button. It is separate from
+			// `version` (guest state) so that a guest notification cannot re-run the
+			// message fetch, which would blank the list to its loading state.
+			const [reload, setReload] = React.useState(0)
 			const listRef = React.useRef(null)
 
 			// React to the guest coming up, failing, or binding.
@@ -1401,6 +1438,12 @@ window.__ModuleLoader__.load({
 			}, [sessionId])
 
 			// Park the guest on the measured area, and keep it parked.
+			//
+			// Depends on `pickerOpen` alone, deliberately not on `version`. This
+			// effect tears down with hideOverlay() and re-runs with showOverlay(),
+			// so re-running it is a hide/show cycle on a `<webview>` — a visible
+			// flicker. The geometry it measures has nothing to do with guest state
+			// anyway; the interval and ResizeObserver below keep it current.
 			React.useEffect(() => {
 				const host = hostRef.current
 				if (host === null) return undefined
@@ -1435,16 +1478,20 @@ window.__ModuleLoader__.load({
 					clearInterval(timer)
 					hideOverlay()
 				}
-			}, [pickerOpen, version])
+			}, [pickerOpen])
 
 			// Hide the guest behind the picker.
 			React.useEffect(() => {
 				setOverlaySuppressed(pickerOpen)
 			}, [pickerOpen])
 
-			// Read the session's messages when the picker opens, and again when the
-			// advanced switch flips — the host does the filtering, so the two sets
-			// are two requests rather than one payload with rows hidden client-side.
+			// Read the session's messages when the picker opens, when the advanced
+			// switch flips, when the Session changes, and when the user asks for a
+			// re-read. Deliberately *not* on `version`: that is bumped by notify(),
+			// and every pass blanks the list to its loading state first — so a guest
+			// notification (a binding landing, the guest coming up) wiped the list
+			// out from under whoever was reading it. `reload` is the explicit
+			// re-read, and it is the only thing that should blank the list.
 			React.useEffect(() => {
 				if (!pickerOpen || sessionId === undefined) return undefined
 				let cancelled = false
@@ -1474,7 +1521,7 @@ window.__ModuleLoader__.load({
 				return () => {
 					cancelled = true
 				}
-			}, [pickerOpen, sessionId, version, advanced])
+			}, [pickerOpen, sessionId, reload, advanced])
 
 			const labels = React.useMemo(() => ({
 				user: t('picker.role.user'),
@@ -1729,7 +1776,7 @@ window.__ModuleLoader__.load({
 							key: 'refresh',
 							type: 'button',
 							className: 'dswc-button',
-							onClick: () => setVersion((value) => value + 1),
+							onClick: () => setReload((value) => value + 1),
 						}, t('action.refresh')),
 						// The advanced switch swaps the whole row set rather than
 						// revealing hidden rows: the host filters, so a tool result the
