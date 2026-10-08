@@ -5,13 +5,16 @@
  */
 
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { Readable } from 'node:stream'
 import { after, before, describe, it } from 'node:test'
+import { fileURLToPath } from 'node:url'
 
 import { apply, ROUTES, setStateDir } from '../src/index.js'
+
+const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 
 let sandbox = ''
 
@@ -90,6 +93,20 @@ describe('registered routes', () => {
   it('registers every route as an exact path', () => {
     const { routes } = hostWith(undefined)
     for (const route of routes.values()) assert.equal(route.kind, 'exact')
+  })
+
+  it('declares every host route in the browser half too', () => {
+    // The halves keep separate copies of the route table, and a missing entry
+    // fails silently: the browser half calls `fetch(undefined)`, which rejects
+    // into a catch that swallows it, so the feature just never happens. That is
+    // exactly how the diagnostics channel shipped dead once.
+    const bundle = readFileSync(join(root, 'lib', 'client.js'), 'utf8')
+    for (const [name, path] of Object.entries(ROUTES)) {
+      assert.ok(
+        bundle.includes(`'${path}'`),
+        `the browser half does not declare the "${name}" route (${path})`,
+      )
+    }
   })
 })
 

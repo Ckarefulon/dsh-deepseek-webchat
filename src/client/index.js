@@ -1,5 +1,5 @@
 /**
- * dsh-deepseek-webchat — browser half.
+ * dsh-deepseek-webchat 鈥?browser half.
  *
  * A sidebar tab that shows the **real** chat.deepseek.com web app and lets you
  * push selected DSH messages into it by hand.
@@ -19,7 +19,7 @@
  * ## Why the guest lives outside React
  *
  * A `<webview>` is destroyed when it leaves the document. If the slot owned it,
- * every look at another tab would tear down the page and reload it — losing a
+ * every look at another tab would tear down the page and reload it 鈥?losing a
  * half-typed question and re-running the site's boot. So the element lives in a
  * container this plugin owns at the document root, and the slot's body only
  * *measures* its area: the persistent guest is positioned onto that rectangle
@@ -31,7 +31,7 @@
  *
  * DeepSeek's own routes (read from its shipped bundle) are
  * `/a/:agentId/s/:sessionId`, so a conversation is addressable as a plain URL.
- * The mapping DSH Session → DeepSeek conversation id is learned by watching the
+ * The mapping DSH Session 鈫?DeepSeek conversation id is learned by watching the
  * guest's URL (the id only appears once the first message is sent, because
  * DeepSeek creates conversations lazily) and is persisted by the host half,
  * which is where a durable file can live.
@@ -41,7 +41,7 @@
  * It never sends anything to DeepSeek on its own. Selecting messages composes a
  * blockquote and *fills the composer*; pressing Enter is the human's move. It
  * never reads a DeepSeek answer back into the DSH conversation, and it never
- * quotes system, developer or injected-prompt events — those are filtered by the
+ * quotes system, developer or injected-prompt events 鈥?those are filtered by the
  * host half before they reach the picker.
  */
 
@@ -64,7 +64,7 @@ window.__ModuleLoader__.load({
 		/** The tab type id; the slot dispatch key for this plugin's body. */
 		const TAB_ID = '@ckarefulon/dsh-deepseek-webchat'
 
-		/** The tab kind. Unique per profile — the type registry keys on it. */
+		/** The tab kind. Unique per profile 鈥?the type registry keys on it. */
 		const TAB_KIND = 'deepseek-webchat'
 
 		/** The real web app. Never an API host, never an iframe. */
@@ -90,69 +90,77 @@ window.__ModuleLoader__.load({
 		/** Attribute marking this plugin's document-root guest container. */
 		const OVERLAY_ATTR = 'data-dsh-deepseek-webchat-overlay'
 
-		/** The host half's routes. */
+		/**
+		 * The host half's routes.
+		 *
+		 * Every route the host registers must appear here, and a test asserts the
+		 * two lists match: a missing entry is `undefined`, and `fetch(undefined)`
+		 * rejects into whichever catch swallows it 鈥?so the feature fails silently
+		 * with nothing to see.
+		 */
 		const ROUTES = {
 			state: '/api/dsh-deepseek-webchat/state',
 			messages: '/api/dsh-deepseek-webchat/messages',
 			binding: '/api/dsh-deepseek-webchat/binding',
 			sessionRestore: '/api/dsh-deepseek-webchat/session/restore',
 			sessionSave: '/api/dsh-deepseek-webchat/session/save',
+			diag: '/api/dsh-deepseek-webchat/diag',
 		}
 
 		/** Locale-owned copy. */
 		const zh = {
-			'type.label': 'DeepSeek 网页版',
-			'guide.title': 'DeepSeek 网页版',
-			'guide.description': '在侧边栏打开 chat.deepseek.com',
-			'action.send': '引用上下文',
-			'action.back': '返回网页',
-			'action.reload': '刷新',
-			'action.rebind': '解除绑定',
-			'action.refresh': '重新读取',
-			'action.all': '全选',
-			'action.none': '清除',
-			'action.last': '选末尾',
-			'action.fill': '填入并发送',
-			'action.fillOnly': '仅填入',
-			'action.copy': '复制',
-			'picker.title': '选择要引用的消息',
-			'picker.empty': '这个会话还没有可引用的消息。',
-			'picker.emptyAdvanced': '这个会话还没有可引用的内容。',
-			'picker.loading': '正在读取会话…',
-			'picker.selected': '已选 {count} 条',
-			'picker.role.user': '用户',
-			'picker.role.assistant': '助手',
-			'picker.role.tool': '工具',
-			'picker.advanced': '高级：包含思考过程与工具调用',
-			'picker.advancedHint': '默认只列你与助手的对话，以及 AI 向你提的问题和选项。打开后会额外列出思考过程、工具调用、工具结果、待办、命令与压缩摘要。',
-			'picker.kind.question': '提问',
-			'picker.kind.answer': '回答',
-			'picker.kind.reasoning': '思考',
-			'picker.kind.toolCall': '调用',
-			'picker.kind.toolResult': '结果',
-			'picker.kind.todo': '待办',
-			'picker.kind.command': '命令',
-			'picker.kind.summary': '摘要',
-			'picker.preamble': '附上说明',
-			'picker.preambleHint': '在引用内容前面加一小段说明，告诉 DeepSeek 这些内容是什么、来自哪里。',
-			'picker.preambleText': '以下是我在另一个 AI 助手（DSH）里的对话片段，引用给你作为背景参考。以「> 」开头的行是原文，【】里标出的是这段内容属于谁（用户、助手、提问、回答、工具调用等）。请先理解这些背景，再回答我最下面的问题；如果背景里有不清楚的地方，请直接指出。',
-			'picker.lastCount': '末尾条数',
-			'picker.question': '要一起发送的问题或指令（可选）',
-			'picker.questionPlaceholder': '例如：请基于以上内容，帮我补充一个更完整的方案。',
-			'picker.preview': '将填入 DeepSeek 输入框的内容',
-			'picker.hint': '点「填入并发送」会直接把预览内容发给 DeepSeek；想先自己确认就点「仅填入」。两种情况都不会改动 DSH 里的对话。',
-			'toast.sent': '已发送到 DeepSeek（{count} 字）。',
-			'toast.sendPending': '已填入 DeepSeek 输入框，但自动发送没有生效 —— 请手动按 Enter。',
-			'status.bound': '已绑定 DeepSeek 会话 {id}',
-			'status.unbound': '未绑定 —— 在 DeepSeek 里发出第一条消息后自动绑定',
-			'status.nobridge': '当前环境没有桌面浏览器通道，无法嵌入真实网页版。',
-			'status.nobridgeHint': '请在 DSH 桌面版里使用；`dsh web` 之类的普通网页 profile 不带这个通道。',
-			'status.failed': '嵌入失败：{error}',
-			'status.filling': '正在填入…',
-			'toast.filled': '已填入 DeepSeek 输入框（{count} 字），请手动按 Enter 发送。',
-			'toast.nocomposer': '没找到 DeepSeek 输入框，请先在网页里打开一个对话。',
-			'toast.copied': '已复制到剪贴板。',
-			'toast.rebound': '已解除绑定，下次打开将新建对话。',
+			'type.label': 'DeepSeek 缃戦〉鐗?,
+			'guide.title': 'DeepSeek 缃戦〉鐗?,
+			'guide.description': '鍦ㄤ晶杈规爮鎵撳紑 chat.deepseek.com',
+			'action.send': '寮曠敤涓婁笅鏂?,
+			'action.back': '杩斿洖缃戦〉',
+			'action.reload': '鍒锋柊',
+			'action.rebind': '瑙ｉ櫎缁戝畾',
+			'action.refresh': '閲嶆柊璇诲彇',
+			'action.all': '鍏ㄩ€?,
+			'action.none': '娓呴櫎',
+			'action.last': '閫夋湯灏?,
+			'action.fill': '濉叆骞跺彂閫?,
+			'action.fillOnly': '浠呭～鍏?,
+			'action.copy': '澶嶅埗',
+			'picker.title': '閫夋嫨瑕佸紩鐢ㄧ殑娑堟伅',
+			'picker.empty': '杩欎釜浼氳瘽杩樻病鏈夊彲寮曠敤鐨勬秷鎭€?,
+			'picker.emptyAdvanced': '杩欎釜浼氳瘽杩樻病鏈夊彲寮曠敤鐨勫唴瀹广€?,
+			'picker.loading': '姝ｅ湪璇诲彇浼氳瘽鈥?,
+			'picker.selected': '宸查€?{count} 鏉?,
+			'picker.role.user': '鐢ㄦ埛',
+			'picker.role.assistant': '鍔╂墜',
+			'picker.role.tool': '宸ュ叿',
+			'picker.advanced': '楂樼骇锛氬寘鍚€濊€冭繃绋嬩笌宸ュ叿璋冪敤',
+			'picker.advancedHint': '榛樿鍙垪浣犱笌鍔╂墜鐨勫璇濓紝浠ュ強 AI 鍚戜綘鎻愮殑闂鍜岄€夐」銆傛墦寮€鍚庝細棰濆鍒楀嚭鎬濊€冭繃绋嬨€佸伐鍏疯皟鐢ㄣ€佸伐鍏风粨鏋溿€佸緟鍔炪€佸懡浠や笌鍘嬬缉鎽樿銆?,
+			'picker.kind.question': '鎻愰棶',
+			'picker.kind.answer': '鍥炵瓟',
+			'picker.kind.reasoning': '鎬濊€?,
+			'picker.kind.toolCall': '璋冪敤',
+			'picker.kind.toolResult': '缁撴灉',
+			'picker.kind.todo': '寰呭姙',
+			'picker.kind.command': '鍛戒护',
+			'picker.kind.summary': '鎽樿',
+			'picker.preamble': '闄勪笂璇存槑',
+			'picker.preambleHint': '鍦ㄥ紩鐢ㄥ唴瀹瑰墠闈㈠姞涓€灏忔璇存槑锛屽憡璇?DeepSeek 杩欎簺鍐呭鏄粈涔堛€佹潵鑷摢閲屻€?,
+			'picker.preambleText': '浠ヤ笅鏄垜鍦ㄥ彟涓€涓?AI 鍔╂墜锛圖SH锛夐噷鐨勫璇濈墖娈碉紝寮曠敤缁欎綘浣滀负鑳屾櫙鍙傝€冦€備互銆? 銆嶅紑澶寸殑琛屾槸鍘熸枃锛屻€愩€戦噷鏍囧嚭鐨勬槸杩欐鍐呭灞炰簬璋侊紙鐢ㄦ埛銆佸姪鎵嬨€佹彁闂€佸洖绛斻€佸伐鍏疯皟鐢ㄧ瓑锛夈€傝鍏堢悊瑙ｈ繖浜涜儗鏅紝鍐嶅洖绛旀垜鏈€涓嬮潰鐨勯棶棰橈紱濡傛灉鑳屾櫙閲屾湁涓嶆竻妤氱殑鍦版柟锛岃鐩存帴鎸囧嚭銆?,
+			'picker.lastCount': '鏈熬鏉℃暟',
+			'picker.question': '瑕佷竴璧峰彂閫佺殑闂鎴栨寚浠わ紙鍙€夛級',
+			'picker.questionPlaceholder': '渚嬪锛氳鍩轰簬浠ヤ笂鍐呭锛屽府鎴戣ˉ鍏呬竴涓洿瀹屾暣鐨勬柟妗堛€?,
+			'picker.preview': '灏嗗～鍏?DeepSeek 杈撳叆妗嗙殑鍐呭',
+			'picker.hint': '鐐广€屽～鍏ュ苟鍙戦€併€嶄細鐩存帴鎶婇瑙堝唴瀹瑰彂缁?DeepSeek锛涙兂鍏堣嚜宸辩‘璁ゅ氨鐐广€屼粎濉叆銆嶃€備袱绉嶆儏鍐甸兘涓嶄細鏀瑰姩 DSH 閲岀殑瀵硅瘽銆?,
+			'toast.sent': '宸插彂閫佸埌 DeepSeek锛坽count} 瀛楋級銆?,
+			'toast.sendPending': '宸插～鍏?DeepSeek 杈撳叆妗嗭紝浣嗚嚜鍔ㄥ彂閫佹病鏈夌敓鏁?鈥斺€?璇锋墜鍔ㄦ寜 Enter銆?,
+			'status.bound': '宸茬粦瀹?DeepSeek 浼氳瘽 {id}',
+			'status.unbound': '鏈粦瀹?鈥斺€?鍦?DeepSeek 閲屽彂鍑虹涓€鏉℃秷鎭悗鑷姩缁戝畾',
+			'status.nobridge': '褰撳墠鐜娌℃湁妗岄潰娴忚鍣ㄩ€氶亾锛屾棤娉曞祵鍏ョ湡瀹炵綉椤电増銆?,
+			'status.nobridgeHint': '璇峰湪 DSH 妗岄潰鐗堥噷浣跨敤锛沗dsh web` 涔嬬被鐨勬櫘閫氱綉椤?profile 涓嶅甫杩欎釜閫氶亾銆?,
+			'status.failed': '宓屽叆澶辫触锛歿error}',
+			'status.filling': '姝ｅ湪濉叆鈥?,
+			'toast.filled': '宸插～鍏?DeepSeek 杈撳叆妗嗭紙{count} 瀛楋級锛岃鎵嬪姩鎸?Enter 鍙戦€併€?,
+			'toast.nocomposer': '娌℃壘鍒?DeepSeek 杈撳叆妗嗭紝璇峰厛鍦ㄧ綉椤甸噷鎵撳紑涓€涓璇濄€?,
+			'toast.copied': '宸插鍒跺埌鍓创鏉裤€?,
+			'toast.rebound': '宸茶В闄ょ粦瀹氾紝涓嬫鎵撳紑灏嗘柊寤哄璇濄€?,
 		}
 
 		const en = {
@@ -173,7 +181,7 @@ window.__ModuleLoader__.load({
 			'picker.title': 'Choose messages to quote',
 			'picker.empty': 'This session has no quotable messages yet.',
 			'picker.emptyAdvanced': 'This session has nothing quotable yet.',
-			'picker.loading': 'Reading the session…',
+			'picker.loading': 'Reading the session鈥?,
 			'picker.selected': '{count} selected',
 			'picker.role.user': 'User',
 			'picker.role.assistant': 'Assistant',
@@ -190,21 +198,21 @@ window.__ModuleLoader__.load({
 			'picker.kind.summary': 'Summary',
 			'picker.preamble': 'Add a note',
 			'picker.preambleHint': 'Put a short note in front of the quoted text, telling DeepSeek what it is and where it came from.',
-			'picker.preambleText': 'Below are excerpts from a conversation I had with another AI assistant (DSH), quoted as background. Lines starting with "> " are the original text, and 【...】 marks who that piece came from (user, assistant, question, answer, tool call, and so on). Please read them for context, then answer my question at the very end; say so if anything in the background is unclear.',
+			'picker.preambleText': 'Below are excerpts from a conversation I had with another AI assistant (DSH), quoted as background. Lines starting with "> " are the original text, and 銆?..銆?marks who that piece came from (user, assistant, question, answer, tool call, and so on). Please read them for context, then answer my question at the very end; say so if anything in the background is unclear.',
 			'picker.lastCount': 'How many',
 			'picker.question': 'Question or instruction to send along (optional)',
 			'picker.questionPlaceholder': 'e.g. Based on the above, help me draft a more complete plan.',
 			'picker.preview': 'What will be sent to DeepSeek',
 			'picker.hint': 'Fill and send puts the preview straight into DeepSeek and submits it; use Fill only if you want to check it first. Neither touches your DSH conversation.',
 			'toast.sent': 'Sent to DeepSeek ({count} chars).',
-			'toast.sendPending': 'Filled the DeepSeek composer, but the automatic send did not take — press Enter there yourself.',
+			'toast.sendPending': 'Filled the DeepSeek composer, but the automatic send did not take 鈥?press Enter there yourself.',
 			'status.bound': 'Bound to DeepSeek conversation {id}',
-			'status.unbound': 'Unbound — binds automatically after the first message is sent in DeepSeek',
+			'status.unbound': 'Unbound 鈥?binds automatically after the first message is sent in DeepSeek',
 			'status.nobridge': 'No desktop browser channel here, so the real web app cannot be embedded.',
 			'status.nobridgeHint': 'Use the DSH desktop app; a plain `dsh web` profile does not carry this channel.',
 			'status.failed': 'Embedding failed: {error}',
-			'status.filling': 'Filling…',
-			'toast.filled': 'Filled the DeepSeek composer ({count} chars) — press Enter yourself to send.',
+			'status.filling': 'Filling鈥?,
+			'toast.filled': 'Filled the DeepSeek composer ({count} chars) 鈥?press Enter yourself to send.',
 			'toast.nocomposer': 'No DeepSeek composer found. Open a conversation in the page first.',
 			'toast.copied': 'Copied to the clipboard.',
 			'toast.rebound': 'Binding cleared; the next visit starts a new conversation.',
@@ -224,8 +232,8 @@ window.__ModuleLoader__.load({
 		/**
 		 * Reduce a DSH Session id to the one form everything else compares against.
 		 *
-		 * DSH names the same Session two ways — the bare uuid that events carry
-		 * (`e07a9659-…`) and the `session-e07a9659-…` form its store uses — and
+		 * DSH names the same Session two ways 鈥?the bare uuid that events carry
+		 * (`e07a9659-鈥) and the `session-e07a9659-鈥 form its store uses 鈥?and
 		 * which one arrives here depends on the caller. The host canonicalises
 		 * what it stores, so comparing a raw id against the host's answer would
 		 * silently mismatch and make a bound Session look unbound.
@@ -282,7 +290,7 @@ window.__ModuleLoader__.load({
 		 * The copy function to use when the framework's `t` seat is absent.
 		 *
 		 * A registration that declares `locale` receives a bound `t`, so this is
-		 * only a backstop — but it resolves real copy rather than rendering raw
+		 * only a backstop 鈥?but it resolves real copy rather than rendering raw
 		 * keys like `action.send` if the seat ever fails to arrive.
 		 * @returns a translate function over this plugin's dictionaries.
 		 */
@@ -376,7 +384,7 @@ window.__ModuleLoader__.load({
 		/**
 		 * Record a visibility flip, and flag a burst.
 		 *
-		 * A flicker is a rate, so one reading of the counters cannot show it — they
+		 * A flicker is a rate, so one reading of the counters cannot show it 鈥?they
 		 * have to be read against the clock. Three flips within two seconds is taken
 		 * as a burst.
 		 * @param kind - `show` or `hide`.
@@ -416,7 +424,7 @@ window.__ModuleLoader__.load({
 		 * A single page load raises several of the events that call this
 		 * (`did-navigate`, `did-navigate-in-page`, `did-finish-load`, plus the
 		 * poll), and each one re-rendered the whole panel. Coalescing them keeps a
-		 * burst from being a burst of renders — which is what a flicker is.
+		 * burst from being a burst of renders 鈥?which is what a flicker is.
 		 */
 		function notifySoon() {
 			if (notifyQueued) return
@@ -448,8 +456,8 @@ window.__ModuleLoader__.load({
 		 * own so the Chrome major version stays truthful.
 		 *
 		 * chat.deepseek.com greets an `electron` token in the user agent with an
-		 * "使用环境异常 / Abnormal usage environment" dialog, and dismissing it is
-		 * stored per guest partition — process-lifetime here, so it would come
+		 * "浣跨敤鐜寮傚父 / Abnormal usage environment" dialog, and dismissing it is
+		 * stored per guest partition 鈥?process-lifetime here, so it would come
 		 * back on every restart. Its check is literally
 		 * `navigator.userAgent.toLowerCase().includes("electron")`, so not
 		 * advertising Electron is what keeps the page clean.
@@ -553,7 +561,7 @@ window.__ModuleLoader__.load({
 		 * The stylesheet is injected first, and that is not incidental: without the
 		 * `position: fixed` rule this element is an ordinary block-level div, so a
 		 * bare one appended to `<body>` claims the full document width and shoves
-		 * the whole app sideways — and the guest's own white page sits on top of it.
+		 * the whole app sideways 鈥?and the guest's own white page sits on top of it.
 		 * That is the "the entire page flashes" symptom, and it appeared whenever the
 		 * guest was rebuilt before the sheet existed.
 		 */
@@ -596,7 +604,7 @@ window.__ModuleLoader__.load({
 		 * The order here is load-bearing. The container is `position: fixed` with a
 		 * white background, and a block-level fixed box with `width: auto` spans the
 		 * whole viewport. Making it visible before its geometry is set therefore
-		 * paints a full-window white slab over the app for a frame — which is what
+		 * paints a full-window white slab over the app for a frame 鈥?which is what
 		 * "the whole page flashes" was. Geometry first, visibility last.
 		 * @param rect - the slot area, in viewport coordinates.
 		 */
@@ -698,7 +706,7 @@ window.__ModuleLoader__.load({
 		 * This guard is what protects the saved login. The guest starts on
 		 * `about:blank#<lease>` and reaches DeepSeek a navigation later, so an
 		 * early `did-finish-load` can fire while the page is still on the opaque
-		 * origin — where `localStorage` throws and `document.cookie` is empty.
+		 * origin 鈥?where `localStorage` throws and `document.cookie` is empty.
 		 * Reading state there would return nothing, and saving that nothing would
 		 * overwrite the snapshot the next launch needs. So both directions of the
 		 * snapshot are confined to the real origin.
@@ -749,12 +757,12 @@ window.__ModuleLoader__.load({
 		}
 
 		/**
-		 * Record one DSH Session → DeepSeek conversation binding.
+		 * Record one DSH Session 鈫?DeepSeek conversation binding.
 		 *
 		 * The host is the authority, not this cache: the cache only exists so the
 		 * poll does not re-POST the same pair every couple of seconds (each write
 		 * notifies the panel and re-renders it). So the host's answer is what the
-		 * cache is reconciled against — if the host says this Session is now
+		 * cache is reconciled against 鈥?if the host says this Session is now
 		 * bound to a different conversation, the cache follows rather than
 		 * insisting on the stale pair.
 		 *
@@ -777,7 +785,7 @@ window.__ModuleLoader__.load({
 				})
 				const payload = await response.json()
 				if (payload?.ok !== true) {
-					// Refused — the conversation belongs to another Session. Leave
+					// Refused 鈥?the conversation belongs to another Session. Leave
 					// the claim off so a later observation can retry, and do not
 					// mark it as bound.
 					return
@@ -838,7 +846,7 @@ window.__ModuleLoader__.load({
 		 * session switch from being bound to the wrong DSH Session.
 		 *
 		 * The settle counter is deliberately *not* reset by the ordinary polling
-		 * path — only by a deliberate navigation — so that a page which is simply
+		 * path 鈥?only by a deliberate navigation 鈥?so that a page which is simply
 		 * sitting still does reach its second reading.
 		 */
 		function observeUrl() {
@@ -865,13 +873,12 @@ window.__ModuleLoader__.load({
 		 * Called when the DSH Session changes (and once on mount). The rule is
 		 * that the page wins whenever it is somewhere legitimate:
 		 *
-		 * - already in the bound conversation — nothing to do;
-		 * - in a conversation nobody owns — adopt it for this Session. This is
+		 * - already in the bound conversation 鈥?nothing to do;
+		 * - in a conversation nobody owns 鈥?adopt it for this Session. This is
 		 *   what makes "the current conversation changed, so follow it" work: the
 		 *   user opening a new conversation in the page rebinds the Session
 		 *   instead of being dragged back to the previous one;
-		 * - in a conversation another Session owns, or nowhere in particular —
-		 *   go to the bound conversation, or home when there is none.
+		 * - in a conversation another Session owns, or nowhere in particular 鈥?		 *   go to the bound conversation, or home when there is none.
 		 *
 		 * Deliberately *not* "always navigate to the binding": doing that fought
 		 * the user's own navigation, which is part of why the binding looked
@@ -995,8 +1002,7 @@ window.__ModuleLoader__.load({
 					}, { once: true })
 					// Storage and cookies can only be written while the page is on
 					// its own origin, so both are restored after the first load of
-					// the real site and the page is then asked to load once more —
-					// this time already signed in. The origin check matters: the
+					// the real site and the page is then asked to load once more 鈥?					// this time already signed in. The origin check matters: the
 					// guest's first document is `about:blank#<lease>`, where writing
 					// storage throws, and treating that as the restore would burn
 					// the one attempt. Until this settles, snapshots are skipped:
@@ -1088,7 +1094,7 @@ window.__ModuleLoader__.load({
 			const body = String(text).trim()
 			if (body === '') return ''
 			const lines = body.split(/\r?\n/)
-			return ['> 【' + label + '】' + lines[0]]
+			return ['> 銆? + label + '銆? + lines[0]]
 				.concat(lines.slice(1).map((line) => '> ' + line))
 				.join('\n')
 		}
@@ -1115,8 +1121,7 @@ window.__ModuleLoader__.load({
 			const asked = String(question ?? '').trim()
 			const note = String(options.preamble ?? '').trim()
 			const chunks = []
-			// The note explains the blockquotes, so it is pointless without them —
-			// a bare question needs no account of where it came from.
+			// The note explains the blockquotes, so it is pointless without them 鈥?			// a bare question needs no account of where it came from.
 			if (quoted !== '') chunks.push(note === '' ? quoted : note + '\n\n' + quoted)
 			if (asked !== '') chunks.push(asked)
 			return chunks.join('\n\n---\n\n')
@@ -1296,7 +1301,7 @@ window.__ModuleLoader__.load({
 		 *
 		 * Its composer runs `onKeyDown` and, for a plain Enter, calls the very
 		 * function its send button calls. Dispatching a bubbling Enter therefore
-		 * runs the user's own code path — no invented shortcut, and no need to
+		 * runs the user's own code path 鈥?no invented shortcut, and no need to
 		 * guess at the send button's generated class name.
 		 * @returns a self-contained script expression.
 		 */
@@ -1321,7 +1326,7 @@ window.__ModuleLoader__.load({
 		 * The script that reports what the composer currently holds.
 		 *
 		 * DeepSeek clears its textarea once a send has been accepted, so an empty
-		 * composer is the receipt that the message actually went out — a much
+		 * composer is the receipt that the message actually went out 鈥?a much
 		 * better signal than assuming the click worked.
 		 * @returns a self-contained script expression.
 		 */
@@ -1342,15 +1347,14 @@ window.__ModuleLoader__.load({
 		 * The script that clicks DeepSeek's own send button.
 		 *
 		 * The fallback for when the Enter path is refused. The button's class name
-		 * is a build-time hash, so it is found by its accessible name instead —
-		 * and it is never clicked when the composer was already cleared, which is
+		 * is a build-time hash, so it is found by its accessible name instead 鈥?		 * and it is never clicked when the composer was already cleared, which is
 		 * what stops a double send.
 		 * @returns a self-contained script expression.
 		 */
 		function clickSendScript() {
 			return '(function () {'
 				+ ' try {'
-				+ ' var wanted = /send|submit|发送/i;'
+				+ ' var wanted = /send|submit|鍙戦€?i;'
 				+ ' var nodes = document.querySelectorAll("button, [role=button]");'
 				+ ' for (var i = 0; i < nodes.length; i += 1) {'
 				+ ' var node = nodes[i];'
@@ -1445,7 +1449,7 @@ window.__ModuleLoader__.load({
 		 * mistake: a `0 0 16 16` viewBox, a 1px stroke (the icon set's
 		 * `Regular` weight; `Medium` is 1.3), `fill: none` on the frame, and
 		 * `currentColor` throughout so the ink comes from whatever the host
-		 * paints — `--dsw-alias-label-secondary` in the guide's 26px icon box,
+		 * paints 鈥?`--dsw-alias-label-secondary` in the guide's 26px icon box,
 		 * `--dsw-alias-label-tertiary` in the tab title.
 		 *
 		 * @param props - `{ size, className }`; the shell supplies both.
@@ -1503,7 +1507,7 @@ window.__ModuleLoader__.load({
 			const [lastN, setLastN] = React.useState(10)
 			const [busy, setBusy] = React.useState(false)
 			const [toast, setToast] = React.useState('')
-			// Bumped only by the explicit 「重新读取」 button. It is separate from
+			// Bumped only by the explicit 銆岄噸鏂拌鍙栥€?button. It is separate from
 			// `version` (guest state) so that a guest notification cannot re-run the
 			// message fetch, which would blank the list to its loading state.
 			const [reload, setReload] = React.useState(0)
@@ -1540,7 +1544,7 @@ window.__ModuleLoader__.load({
 			// Follow the DSH Session this pane belongs to.
 			//
 			// This depends on `sessionId` alone. It used to depend on `version`
-			// too, which is bumped by every notify() — and notify() fires from the
+			// too, which is bumped by every notify() 鈥?and notify() fires from the
 			// guest's own navigation events. That made the effect re-run on every
 			// navigation, navigate again, and so notify itself: an endless
 			// navigate/notify ping-pong that showed up as the panel flickering.
@@ -1563,7 +1567,7 @@ window.__ModuleLoader__.load({
 			//
 			// Depends on `pickerOpen` alone, deliberately not on `version`. This
 			// effect tears down with hideOverlay() and re-runs with showOverlay(),
-			// so re-running it is a hide/show cycle on a `<webview>` — a visible
+			// so re-running it is a hide/show cycle on a `<webview>` 鈥?a visible
 			// flicker. The geometry it measures has nothing to do with guest state
 			// anyway; the interval and ResizeObserver below keep it current.
 			React.useEffect(() => {
@@ -1578,7 +1582,7 @@ window.__ModuleLoader__.load({
 					}
 					const rect = host.getBoundingClientRect()
 					// `getClientRects()` is empty when the host or any ancestor is
-					// `display: none`, which is how an unselected pane hides — so it
+					// `display: none`, which is how an unselected pane hides 鈥?so it
 					// is the right test, and `offsetParent` is not (it is null for a
 					// fixed-position ancestor even when the element is plainly
 					// visible). The size guard rejects a pane mid-layout.
@@ -1644,7 +1648,7 @@ window.__ModuleLoader__.load({
 			// Read the session's messages when the picker opens, when the advanced
 			// switch flips, when the Session changes, and when the user asks for a
 			// re-read. Deliberately *not* on `version`: that is bumped by notify(),
-			// and every pass blanks the list to its loading state first — so a guest
+			// and every pass blanks the list to its loading state first 鈥?so a guest
 			// notification (a binding landing, the guest coming up) wiped the list
 			// out from under whoever was reading it. `reload` is the explicit
 			// re-read, and it is the only thing that should blank the list.
@@ -1745,8 +1749,8 @@ window.__ModuleLoader__.load({
 							: format(t('status.failed'), { error: String(result.error) }))
 						return
 					}
-					// The selection has been consumed either way — it is in
-					// DeepSeek's composer now — so leaving it ticked would only make
+					// The selection has been consumed either way 鈥?it is in
+					// DeepSeek's composer now 鈥?so leaving it ticked would only make
 					// the next push repeat this one.
 					setSelected(new Set())
 					setQuestion('')
@@ -1793,7 +1797,7 @@ window.__ModuleLoader__.load({
 
 			// A glyph, not a sentence: the full status is the tooltip, because a
 			// failure message is far too long for a toolbar.
-			const statusGlyph = state.failure !== '' ? '⚠' : (bound !== null ? '●' : '○')
+			const statusGlyph = state.failure !== '' ? '鈿? : (bound !== null ? '鈼? : '鈼?)
 
 			const toolbar = h('div', { className: 'dswc-toolbar' }, [
 				h('span', {
