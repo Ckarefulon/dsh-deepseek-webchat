@@ -359,10 +359,29 @@ describe('desktop guest channel', () => {
     // the cache each poll re-POSTs and re-renders the panel forever.
     assert.ok(bundle.includes('boundPairs'))
     assert.ok(bundle.includes('if (boundPairs.has(pair)) return'))
+    // The claim is taken from the host's echo, not from the request, so a write
+    // the host refuses is not cached as though it had succeeded.
+    assert.ok(bundle.includes('boundPairs.add(dshSessionId'))
   })
 
   it('clears that cache when a binding is forgotten', () => {
     assert.ok(bundle.includes('forgetBoundPairs'))
+    // Canonicalised, or the entry survives and the next visit looks bound.
+    assert.ok(bundle.includes('const canonical = canonicalSessionId(dshSessionId)'))
+  })
+
+  it('adopts a conversation the page moved to, instead of fighting it', () => {
+    // The user opening a new conversation must rebind the Session. Only a
+    // conversation owned by *another* Session is navigated away from.
+    assert.ok(bundle.includes('if (owner === null)'))
+    assert.ok(bundle.includes('await bind(dshSessionId, currentId)'))
+  })
+
+  it('compares Session ids in one canonical form', () => {
+    // DSH hands out both `e07a9659-…` and `session-e07a9659-…`; comparing the
+    // raw form against the host's canonical answer silently mismatched.
+    assert.ok(bundle.includes("trimmed.startsWith('session-')"))
+    assert.ok(bundle.includes("trimmed.slice('session-'.length)"))
   })
 
   it('snapshots the guest login state to the host', () => {

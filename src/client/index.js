@@ -222,6 +222,24 @@ window.__ModuleLoader__.load({
 		}
 
 		/**
+		 * Reduce a DSH Session id to the one form everything else compares against.
+		 *
+		 * DSH names the same Session two ways — the bare uuid that events carry
+		 * (`e07a9659-…`) and the `session-e07a9659-…` form its store uses — and
+		 * which one arrives here depends on the caller. The host canonicalises
+		 * what it stores, so comparing a raw id against the host's answer would
+		 * silently mismatch and make a bound Session look unbound.
+		 * @param value - a Session id in either form.
+		 * @returns the canonical id, or '' when there is none.
+		 */
+		function canonicalSessionId(value) {
+			if (typeof value !== 'string') return ''
+			const trimmed = value.trim()
+			if (trimmed === '') return ''
+			return trimmed.startsWith('session-') ? trimmed.slice('session-'.length) : trimmed
+		}
+
+		/**
 		 * The DeepSeek conversation id inside a chat.deepseek.com URL.
 		 * @param value - any URL string.
 		 * @returns the conversation id, or undefined.
@@ -591,36 +609,61 @@ window.__ModuleLoader__.load({
 		/**
 		 * Record one DSH Session → DeepSeek conversation binding.
 		 *
-		 * Remembered once taken, because `observeUrl` polls: without this the same
-		 * pair would be re-POSTed every few seconds, and each write would notify
-		 * the panel and re-render it forever.
+		 * The host is the authority, not this cache: the cache only exists so the
+		 * poll does not re-POST the same pair every couple of seconds (each write
+		 * notifies the panel and re-renders it). So the host's answer is what the
+		 * cache is reconciled against — if the host says this Session is now
+		 * bound to a different conversation, the cache follows rather than
+		 * insisting on the stale pair.
+		 *
+		 * Re-binding is allowed and is the point: when the user's conversation in
+		 * the page changes, the Session should follow the new one. The host
+		 * refuses only a conversation another Session already owns.
 		 * @param dshSessionId - DSH Session id.
 		 * @param deepseekSessionId - DeepSeek conversation id.
 		 */
-		async function bind(dshSessionId, deepseekSessionId) {
-			if (typeof dshSessionId !== 'string' || dshSessionId === '') return
+		async function bind(rawSessionId, deepseekSessionId) {
+			const dshSessionId = canonicalSessionId(rawSessionId)
+			if (dshSessionId === '') return
 			const pair = dshSessionId + '\u0000' + deepseekSessionId
 			if (boundPairs.has(pair)) return
-			boundPairs.add(pair)
 			try {
-				await fetch(ROUTES.binding, {
+				const response = await fetch(ROUTES.binding, {
 					method: 'POST',
 					headers: { 'content-type': 'application/json' },
 					body: JSON.stringify({ dshSessionId, deepseekSessionId }),
 				})
+				const payload = await response.json()
+				if (payload?.ok !== true) {
+					// Refused — the conversation belongs to another Session. Leave
+					// the claim off so a later observation can retry, and do not
+					// mark it as bound.
+					return
+				}
+				// The host echoes the binding it now holds, so the cache records
+				// what is actually stored rather than what was merely requested.
+				const stored = typeof payload.deepseekSessionId === 'string'
+					? payload.deepseekSessionId
+					: deepseekSessionId
+				boundPairs.add(dshSessionId + '\u0000' + stored)
 				notify()
 			} catch (error) {
-				// The next observation retries, so drop the claim.
-				boundPairs.delete(pair)
+				// The next observation retries, so leave the claim off.
 			}
 		}
 
 		/**
 		 * Forget the write cache for one DSH Session.
-		 * @param dshSessionId - DSH Session id.
+		 *
+		 * The prefix is canonicalised to match how `bind` keys the cache; a raw id
+		 * here would leave the entry behind, and the next visit would be silently
+		 * treated as "already bound" and never re-registered.
+		 * @param dshSessionId - DSH Session id, in either form.
 		 */
 		function forgetBoundPairs(dshSessionId) {
-			const prefix = dshSessionId + '\u0000'
+			const canonical = canonicalSessionId(dshSessionId)
+			if (canonical === '') return
+			const prefix = canonical + '\u0000'
 			for (const pair of [...boundPairs]) {
 				if (pair.startsWith(prefix)) boundPairs.delete(pair)
 			}
@@ -675,17 +718,27 @@ window.__ModuleLoader__.load({
 		}
 
 		/**
-		 * Point the guest at the conversation this DSH Session owns.
+		 * Point the guest at the conversation this DSH Session should be showing.
 		 *
-		 * A bound Session opens its conversation directly. An unbound one keeps
-		 * whatever unbound conversation it is already in — that one was started
-		 * for this very Session and is about to be bound — and is otherwise taken
-		 * to the root so the user starts fresh. Landing on a non-conversation URL
-		 * still counts as "not in the bound conversation", which matters because
-		 * DeepSeek's root does not always redirect into one.
+		 * Called when the DSH Session changes (and once on mount). The rule is
+		 * that the page wins whenever it is somewhere legitimate:
+		 *
+		 * - already in the bound conversation — nothing to do;
+		 * - in a conversation nobody owns — adopt it for this Session. This is
+		 *   what makes "the current conversation changed, so follow it" work: the
+		 *   user opening a new conversation in the page rebinds the Session
+		 *   instead of being dragged back to the previous one;
+		 * - in a conversation another Session owns, or nowhere in particular —
+		 *   go to the bound conversation, or home when there is none.
+		 *
+		 * Deliberately *not* "always navigate to the binding": doing that fought
+		 * the user's own navigation, which is part of why the binding looked
+		 * unreliable.
 		 * @param dshSessionId - the DSH Session the guest should follow.
 		 */
-		async function focusSession(dshSessionId) {
+		async function focusSession(rawSessionId) {
+			const dshSessionId = canonicalSessionId(rawSessionId)
+			if (dshSessionId === '') return
 			activeSessionId = dshSessionId
 			if (guest === null) return
 			let current
@@ -696,18 +749,22 @@ window.__ModuleLoader__.load({
 			}
 			const currentId = sessionIdOf(current)
 			const bound = await readBinding(dshSessionId)
-			if (bound !== null) {
+			if (currentId !== undefined) {
 				if (currentId === bound) return
-				navigate(conversationUrl(bound))
+				const owner = await ownerOf(currentId)
+				// Unowned: this is the Session's conversation now. Adopting here
+				// also covers the case where the id only *looked* unbound because
+				// the stored key was written in the other id form.
+				if (owner === null) {
+					await bind(dshSessionId, currentId)
+					return
+				}
+				if (owner === dshSessionId) return
+				// Someone else's conversation: restore this Session's own.
+				navigate(bound === null ? PAGE_URL : conversationUrl(bound))
 				return
 			}
-			// Unbound. Nothing to reach, and anything already open is fine as it
-			// is: sending the first message anywhere binds this Session to it.
-			// Navigating here would fight DeepSeek's own redirect back into the
-			// user's last conversation, which is what made the panel flicker.
-			if (currentId === undefined) return
-			const owner = await ownerOf(currentId)
-			if (owner !== null && owner !== dshSessionId) navigate(PAGE_URL)
+			if (bound !== null) navigate(conversationUrl(bound))
 		}
 
 		/**

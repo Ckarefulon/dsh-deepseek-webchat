@@ -12,6 +12,7 @@ import { fileURLToPath } from 'node:url'
 
 import {
   AGENT_ID,
+  canonicalSessionId,
   contentText,
   deepseekConversationUrl,
   deepseekSessionIdOf,
@@ -293,6 +294,52 @@ describe('bindings', () => {
     writeFileSync(join(sandbox, 'bindings.json'), '{ not json', 'utf8')
     assert.deepEqual(readBindings(), {})
     assert.equal(readBinding('s1'), undefined)
+  })
+
+  it('treats both spellings of a Session id as the same Session', () => {
+    // DSH hands out the bare uuid from its event/query APIs and the
+    // `session-<uuid>` form from its store. Keying on the raw string made a
+    // Session look unbound depending on which one a caller held — and an
+    // "unbound" Session gets sent to DeepSeek's root, which is what made the
+    // binding look unreliable.
+    assert.equal(canonicalSessionId('session-abc'), 'abc')
+    assert.equal(canonicalSessionId('abc'), 'abc')
+    assert.equal(canonicalSessionId('  abc  '), 'abc')
+    assert.equal(canonicalSessionId(''), '')
+    assert.equal(canonicalSessionId(undefined), '')
+
+    assert.equal(writeBinding('session-abc', 'ds-abc'), true)
+    assert.equal(readBinding('abc'), 'ds-abc')
+    assert.equal(readBinding('session-abc'), 'ds-abc')
+    assert.equal(findOwner('ds-abc'), 'abc')
+    assert.equal(deleteBinding('abc'), true)
+    assert.equal(readBinding('session-abc'), undefined)
+  })
+
+  it('canonicalises entries written by an older version', () => {
+    writeFileSync(
+      join(sandbox, 'bindings.json'),
+      JSON.stringify({ version: 1, bindings: { 'session-old': 'ds-old' } }),
+      'utf8',
+    )
+    assert.equal(readBinding('old'), 'ds-old')
+    assert.equal(findOwner('ds-old'), 'old')
+  })
+
+  it('re-points a Session when its conversation changes', () => {
+    // The user opening a different conversation should move the binding.
+    assert.equal(writeBinding('s9', 'ds-first'), true)
+    assert.equal(writeBinding('s9', 'ds-second'), true)
+    assert.equal(readBinding('s9'), 'ds-second')
+    assert.equal(findOwner('ds-first'), undefined)
+  })
+
+  it('refuses to steal a conversation another Session owns', () => {
+    writeBinding('owner', 'ds-owned')
+    assert.equal(writeBinding('thief', 'ds-owned'), false)
+    assert.equal(readBinding('thief'), undefined)
+    assert.equal(readBinding('owner'), 'ds-owned')
+    assert.equal(findOwner('ds-owned'), 'owner')
   })
 })
 
