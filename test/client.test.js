@@ -387,11 +387,48 @@ describe('desktop guest channel', () => {
     assert.ok(bundle.includes('const canonical = canonicalSessionId(dshSessionId)'))
   })
 
-  it('adopts a conversation the page moved to, instead of fighting it', () => {
-    // The user opening a new conversation must rebind the Session. Only a
-    // conversation owned by *another* Session is navigated away from.
-    assert.ok(bundle.includes('if (owner === null)'))
-    assert.ok(bundle.includes('await bind(dshSessionId, currentId)'))
+  it('restores an existing binding instead of adopting what is on screen', () => {
+    // Adopting an unowned conversation used to be checked first, so a Session
+    // that already owned one could have its binding silently replaced: DeepSeek
+    // redirects its root into the user's last conversation, so the guest often
+    // arrives somewhere unowned, and that branch would re-point the Session
+    // instead of returning it to its own conversation. That is the "binding
+    // failed" symptom.
+    const at = bundle.indexOf('async function focusSession(')
+    assert.ok(at > -1)
+    const body = bundle.slice(at, bundle.indexOf('async function ownerOf('))
+    const boundCheck = body.indexOf('if (bound !== null)')
+    const adoptCheck = body.indexOf('if (owner === null)')
+    assert.ok(boundCheck > -1 && adoptCheck > -1, 'both branches must exist')
+    assert.ok(boundCheck < adoptCheck, 'the existing binding must be honoured first')
+    assert.ok(
+      /if \(currentId !== bound\) navigate\(conversationUrl\(bound\)\)/.test(body),
+      'a bound Session must be navigated back to its conversation',
+    )
+  })
+
+  it('never lets the URL poll steal a conversation that is already owned', () => {
+    // observeUrl runs every two seconds. Binding unconditionally there re-pointed
+    // the active Session at whatever the guest was showing, which during a restore
+    // is the old conversation — the navigation has not landed yet — so the poll
+    // undid the restore.
+    const at = bundle.indexOf('function observeUrl(')
+    assert.ok(at > -1)
+    const body = bundle.slice(at, bundle.indexOf('async function adoptIfUnowned('))
+    assert.equal(
+      /void bind\(activeSessionId/.test(body),
+      false,
+      'observeUrl must not bind unconditionally',
+    )
+    assert.ok(body.includes('adoptIfUnowned'), 'observeUrl must go through the unowned-only path')
+    const adopt = bundle.slice(
+      bundle.indexOf('async function adoptIfUnowned('),
+      bundle.indexOf('async function focusSession('),
+    )
+    assert.ok(
+      /if \(owner !== null && owner !== dshSessionId\) return/.test(adopt),
+      'a conversation owned by another Session must not be adopted',
+    )
   })
 
   it('compares Session ids in one canonical form', () => {

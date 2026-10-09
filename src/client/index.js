@@ -880,27 +880,49 @@ window.__ModuleLoader__.load({
 			}
 			const deepseekSessionId = sessionIdOf(url)
 			if (deepseekSessionId === undefined) return
-			void bind(activeSessionId, deepseekSessionId)
+			// Only adopt a conversation nobody owns.
+			//
+			// Binding unconditionally here re-pointed the active Session at whatever
+			// the guest happened to be showing. During a restore that is the *old*
+			// conversation — the navigation to the right one has not landed yet — so
+			// the poll undid the restore and the binding looked broken. A
+			// conversation another Session owns is never adopted; focusSession is
+			// what decides those.
+			void adoptIfUnowned(activeSessionId, deepseekSessionId)
+		}
+
+		/**
+		 * Bind a conversation to a Session only when nobody owns it yet.
+		 *
+		 * A conversation already owned by *this* Session needs no write, and one
+		 * owned by another must not be stolen.
+		 * @param dshSessionId - DSH Session id.
+		 * @param deepseekSessionId - DeepSeek conversation id.
+		 */
+		async function adoptIfUnowned(dshSessionId, deepseekSessionId) {
+			const owner = await ownerOf(deepseekSessionId)
+			if (owner !== null && owner !== dshSessionId) return
+			await bind(dshSessionId, deepseekSessionId)
 		}
 
 		/**
 		 * Point the guest at the conversation this DSH Session should be showing.
 		 *
-		 * Called when the DSH Session changes (and once on mount). The rule is
-		 * that the page wins whenever it is somewhere legitimate:
+		 * Called when the DSH Session changes, and once on mount. The rule is that
+		 * an existing binding wins: a Session that already owns a conversation is
+		 * taken back to it, whatever the guest happens to be showing.
 		 *
-		 * - already in the bound conversation — nothing to do;
-		 * - in a conversation nobody owns — adopt it for this Session. This is
-		 *   what makes "the current conversation changed, so follow it" work: the
-		 *   user opening a new conversation in the page rebinds the Session
-		 *   instead of being dragged back to the previous one;
-		 * - in a conversation another Session owns, or nowhere in particular —
-		 *   go to the bound conversation, or home when there is none.
+		 * Only a Session with no binding adopts what the guest is already displaying
+		 * (which is how its first message lands in the conversation already open).
+		 * Adopting is deliberately second, because DeepSeek redirects its root into
+		 * the user's last conversation, so the guest is frequently sitting somewhere
+		 * unowned when a switch arrives — and adopting then would re-point the
+		 * Session instead of restoring it.
 		 *
-		 * Deliberately *not* "always navigate to the binding": doing that fought
-		 * the user's own navigation, which is part of why the binding looked
-		 * unreliable.
-		 * @param dshSessionId - the DSH Session the guest should follow.
+		 * Following a conversation the user opens *within* a Session is observeUrl's
+		 * job: it sees the new URL and claims it if it is unowned.
+		 * @param rawSessionId - the DSH Session the guest should follow, in either
+		 *   id form.
 		 */
 		async function focusSession(rawSessionId) {
 			const dshSessionId = canonicalSessionId(rawSessionId)
@@ -915,22 +937,34 @@ window.__ModuleLoader__.load({
 			}
 			const currentId = sessionIdOf(current)
 			const bound = await readBinding(dshSessionId)
-			if (currentId !== undefined) {
-				if (currentId === bound) return
-				const owner = await ownerOf(currentId)
-				// Unowned: this is the Session's conversation now. Adopting here
-				// also covers the case where the id only *looked* unbound because
-				// the stored key was written in the other id form.
-				if (owner === null) {
-					await bind(dshSessionId, currentId)
-					return
-				}
-				if (owner === dshSessionId) return
-				// Someone else's conversation: restore this Session's own.
-				navigate(bound === null ? PAGE_URL : conversationUrl(bound))
+			// An existing binding wins, and this is the whole point of focusing.
+			//
+			// Adopting an unowned conversation used to be checked first, which meant
+			// a Session that already owned a conversation could have that binding
+			// silently replaced: DeepSeek redirects its root into the user's last
+			// conversation, so the guest frequently arrives somewhere unowned, and
+			// that branch would adopt it and re-point the Session instead of going
+			// back to its own conversation. That is the "binding failed" symptom.
+			//
+			// Following a conversation the user opens *within* a Session is
+			// observeUrl's job, not this one's: it sees the new URL and re-points
+			// the binding, so nothing is lost by restoring here.
+			if (bound !== null) {
+				if (currentId !== bound) navigate(conversationUrl(bound))
 				return
 			}
-			if (bound !== null) navigate(conversationUrl(bound))
+			// No binding yet, so this Session has nothing to restore. Adopt what the
+			// guest is already showing, which is how a Session's first message lands
+			// in the conversation already open.
+			if (currentId === undefined) return
+			const owner = await ownerOf(currentId)
+			if (owner === null) {
+				await bind(dshSessionId, currentId)
+				return
+			}
+			// Another Session owns it and this one owns nothing: start fresh rather
+			// than typing into someone else's conversation.
+			navigate(PAGE_URL)
 		}
 
 		/**
