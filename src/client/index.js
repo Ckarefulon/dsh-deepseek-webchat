@@ -87,6 +87,16 @@ window.__ModuleLoader__.load({
 		/** How often the guest's URL is re-read as a fallback, in ms. */
 		const URL_POLL_MS = 2000
 
+		/**
+		 * How often the guest is re-parked as a fallback, in ms.
+		 *
+		 * The ResizeObserver catches size changes; this only has to catch a pane
+		 * that moved without resizing. Every tick forces a layout read, so a fast
+		 * timer here is real work — the previous 250 ms was four forced layouts a
+		 * second for something the observer already covers.
+		 */
+		const PANE_POLL_MS = 2000
+
 		/** Attribute marking this plugin's document-root guest container. */
 		const OVERLAY_ATTR = 'data-dsh-deepseek-webchat-overlay'
 
@@ -384,6 +394,29 @@ window.__ModuleLoader__.load({
 		const flipTimes = []
 
 		/**
+		 * Whether the diagnostics channel is collecting.
+		 *
+		 * Off unless asked for. It exists to make a flicker in the guest measurable
+		 * from outside, which was worth a layout read and a JSON POST every second
+		 * while diagnosing one — but not afterwards. Turn it on by loading the GUI
+		 * with `?diag=1` (or setting `localStorage['dsh-deepseek-webchat:diag']`).
+		 * The plugin behaves identically either way; only the reporting differs.
+		 */
+		const diagnosticsOn = diagnosticsEnabled()
+
+		/**
+		 * @returns whether diagnostics were requested for this page load.
+		 */
+		function diagnosticsEnabled() {
+			try {
+				if (new URLSearchParams(location.search).has('diag')) return true
+				return globalThis.localStorage?.getItem('dsh-deepseek-webchat:diag') === '1'
+			} catch (error) {
+				return false
+			}
+		}
+
+		/**
 		 * Record a visibility flip, and flag a burst.
 		 *
 		 * A flicker is a rate, so one reading of the counters cannot show it — they
@@ -393,6 +426,7 @@ window.__ModuleLoader__.load({
 		 * @param detail - whatever the caller knows about this flip.
 		 */
 		function noteFlip(kind, detail) {
+			if (!diagnosticsOn) return
 			const now = Date.now()
 			flipTimes.push(now)
 			while (flipTimes.length > 0 && now - flipTimes[0] > 2000) flipTimes.shift()
@@ -403,12 +437,17 @@ window.__ModuleLoader__.load({
 
 		/** Record one visibility transition, keeping only the recent tail. */
 		function diagEvent(kind, detail) {
+			// Cheap early-out when diagnostics are off: this is called on every
+			// parking pass and every notify, and building an event object plus a
+			// Date.now() each time is pure overhead in normal use.
+			if (!diagnosticsOn) return
 			diag.events.push({ t: Date.now(), kind, detail })
 			if (diag.events.length > 40) diag.events.splice(0, diag.events.length - 40)
 		}
 
 		/** Post the counters so the host can serve them from the diag route. */
 		function postDiagnostics(extra) {
+			if (!diagnosticsOn) return
 			try {
 				void fetch(ROUTES.diag, {
 					method: 'POST',
@@ -895,11 +934,17 @@ window.__ModuleLoader__.load({
 		 * Bind a conversation to a Session only when nobody owns it yet.
 		 *
 		 * A conversation already owned by *this* Session needs no write, and one
-		 * owned by another must not be stolen.
+		 * owned by another must not be stolen. The already-ours case is checked
+		 * against the write cache first, because this runs from the URL poll and
+		 * from every navigation event: without that, the steady state — the guest
+		 * sitting in the conversation this Session already owns — would cost a
+		 * round trip to the host every couple of seconds, for an answer that cannot
+		 * have changed.
 		 * @param dshSessionId - DSH Session id.
 		 * @param deepseekSessionId - DeepSeek conversation id.
 		 */
 		async function adoptIfUnowned(dshSessionId, deepseekSessionId) {
+			if (boundPairs.has(dshSessionId + '\u0000' + deepseekSessionId)) return
 			const owner = await ownerOf(deepseekSessionId)
 			if (owner !== null && owner !== dshSessionId) return
 			await bind(dshSessionId, deepseekSessionId)
@@ -1652,12 +1697,16 @@ window.__ModuleLoader__.load({
 						hideOverlay()
 						return
 					}
+					// One layout read, not two. `getBoundingClientRect()` and
+					// `getClientRects()` both force the browser to flush pending
+					// layout, and an empty rect is already detectable from the
+					// bounding rect alone: a box that is not laid out measures 0x0.
+					// The old pair doubled the cost of every tick for the same answer.
 					const rect = host.getBoundingClientRect()
-					const rects = host.getClientRects().length
-					if (rects === 0 || !(rect.width > 2) || !(rect.height > 2)) {
+					if (!(rect.width > 2) || !(rect.height > 2)) {
 						diag.misses += 1
 						diagEvent('update', {
-							why: 'not-laid-out', rects, w: rect.width, h: rect.height,
+							why: 'not-laid-out', w: rect.width, h: rect.height,
 						})
 						return
 					}
@@ -1668,41 +1717,47 @@ window.__ModuleLoader__.load({
 				const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(update) : null
 				if (observer !== null) observer.observe(host)
 				window.addEventListener('resize', update)
-				const timer = setInterval(update, 250)
-				// Report on ourselves while this pane is mounted, so a flicker can be
-				// measured from outside the guest rather than guessed at. The pane's
-				// own geometry is included: a host rect that changes every tick is a
-				// different problem from one that never changes at all.
-				const snapshot = () => {
-					let url = ''
-					try {
-						url = guest === null ? '' : guest.element.getURL()
-					} catch (error) {
-						url = ''
+				// The 250 ms poll is a fallback for the cases the observer cannot see:
+				// a pane whose position changed without its size changing (the
+				// sidebar widening, the header growing) moves the host rect but fires
+				// no resize. Two seconds is often enough for that, and each tick
+				// forces a layout read, so a fast timer here is real work for no
+				// benefit.
+				const timer = setInterval(update, PANE_POLL_MS)
+				// Diagnostics are opt-in. They were a debugging tool, and leaving them
+				// on in normal use cost a layout read plus a JSON POST every second —
+				// measured lag on a panel this small. `?diag=1` on the GUI URL turns
+				// them on; the plugin works identically either way.
+				let reporter = 0
+				if (diagnosticsEnabled()) {
+					const snapshot = () => {
+						let url = ''
+						try {
+							url = guest === null ? '' : guest.element.getURL()
+						} catch (error) {
+							url = ''
+						}
+						const rect = host.getBoundingClientRect()
+						return {
+							url,
+							suppressed: overlaySuppressed,
+							display: guest === null ? '' : guest.container.style.display,
+							host: {
+								l: Math.round(rect.left), t: Math.round(rect.top),
+								w: Math.round(rect.width), h: Math.round(rect.height),
+							},
+							rects: host.getClientRects().length,
+							pane: pickerOpen,
+						}
 					}
-					const rect = host.getBoundingClientRect()
-					return {
-						url,
-						suppressed: overlaySuppressed,
-						display: guest === null ? '' : guest.container.style.display,
-						host: {
-							l: Math.round(rect.left), t: Math.round(rect.top),
-							w: Math.round(rect.width), h: Math.round(rect.height),
-						},
-						rects: host.getClientRects().length,
-						pane: pickerOpen,
-					}
+					reporter = setInterval(() => postDiagnostics(snapshot()), 2000)
+					postDiagnostics(snapshot())
 				}
-				const reporter = setInterval(() => postDiagnostics(snapshot()), 1000)
-				postDiagnostics(snapshot())
 				return () => {
 					if (observer !== null) observer.disconnect()
 					window.removeEventListener('resize', update)
 					clearInterval(timer)
-					clearInterval(reporter)
-					// One last report, so the state at teardown survives: if the pane is
-					// being remounted in a loop, this is the record of it.
-					postDiagnostics({ ...snapshot(), teardown: true })
+					if (reporter !== 0) clearInterval(reporter)
 					hideOverlay()
 				}
 			}, [pickerOpen, tabVisible])
