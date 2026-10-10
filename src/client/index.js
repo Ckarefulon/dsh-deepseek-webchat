@@ -97,6 +97,18 @@ window.__ModuleLoader__.load({
 		 */
 		const PANE_POLL_MS = 2000
 
+		/**
+		 * How many rows the picker mounts per page.
+		 *
+		 * A session can hold hundreds of rows — one measured at 555 — and building
+		 * plus laying out all of them blocks the main thread: 73 ms for 555, mostly
+		 * the forced layout. The list opens on the newest few, which is what a
+		 * person actually picks from, and older rows are loaded a page at a time
+		 * from the top. Selection is by `seq`, so the bulk actions still cover the
+		 * whole session rather than only what is mounted.
+		 */
+		const LIST_PAGE_SIZE = 10
+
 		/** Attribute marking this plugin's document-root guest container. */
 		const OVERLAY_ATTR = 'data-dsh-deepseek-webchat-overlay'
 
@@ -138,6 +150,8 @@ window.__ModuleLoader__.load({
 			'picker.emptyAdvanced': '这个会话还没有可引用的内容。',
 			'picker.loading': '正在读取会话…',
 			'picker.selected': '已选 {count} 条',
+			'picker.hiddenEarlier': '上面还有 {count} 条更早的',
+			'action.loadEarlier': '加载更早的 {count} 条',
 			'picker.role.user': '用户',
 			'picker.role.assistant': '助手',
 			'picker.role.tool': '工具',
@@ -193,6 +207,8 @@ window.__ModuleLoader__.load({
 			'picker.emptyAdvanced': 'This session has nothing quotable yet.',
 			'picker.loading': 'Reading the session…',
 			'picker.selected': '{count} selected',
+			'picker.hiddenEarlier': '{count} earlier rows above',
+			'action.loadEarlier': 'Load {count} earlier',
 			'picker.role.user': 'User',
 			'picker.role.assistant': 'Assistant',
 			'picker.role.tool': 'Tool',
@@ -569,6 +585,7 @@ window.__ModuleLoader__.load({
 				'.dswc-pickerHead{display:flex;align-items:center;gap:6px;row-gap:4px;flex-wrap:wrap;flex:none}',
 				'.dswc-pickerTitle{font-weight:600}',
 				'.dswc-muted{color:var(--dsw-alias-label-tertiary,#adb2b8);font-size:11px}',
+				'.dswc-more{position:sticky;top:0;display:flex;align-items:center;gap:8px;padding:6px 8px;background:var(--dsw-alias-bg-layer-1,#fff);border-bottom:1px solid var(--dsw-alias-border-l4,rgba(128,128,128,.25))}',
 				'.dswc-list{flex:1 1 auto;min-height:60px;overflow:auto;border:1px solid var(--dsw-alias-border-l4,rgba(128,128,128,.25));border-radius:var(--dsw-radius-md,12px)}',
 				'.dswc-row{display:flex;gap:6px;padding:6px 8px;cursor:pointer;border-bottom:1px solid var(--dsw-alias-border-l4,rgba(128,128,128,.15))}',
 				'.dswc-row:last-child{border-bottom:0}',
@@ -1634,7 +1651,12 @@ window.__ModuleLoader__.load({
 			// `version` (guest state) so that a guest notification cannot re-run the
 			// message fetch, which would blank the list to its loading state.
 			const [reload, setReload] = React.useState(0)
+			// How many of the newest rows are mounted. Grows a page at a time from
+			// the top of the list, so a long session never builds every row at once.
+			const [pageSize, setPageSize] = React.useState(LIST_PAGE_SIZE)
 			const listRef = React.useRef(null)
+			// The row to hold in place while a page of earlier rows is inserted above.
+			const anchoredRef = React.useRef(null)
 
 			// React to the guest coming up, failing, or binding.
 			React.useEffect(() => {
@@ -1803,6 +1825,10 @@ window.__ModuleLoader__.load({
 				// so a slow host query is distinguishable from a slow render.
 				const t0 = Date.now()
 				diagEvent('picker:open', { sessionId: String(sessionId) })
+				// A new fetch starts a new window: without this, paging a long session
+				// and then opening another one would begin already expanded.
+				setPageSize(LIST_PAGE_SIZE)
+				anchoredRef.current = null
 				setMessages(null)
 				setLoadError('')
 				void (async () => {
@@ -1876,11 +1902,27 @@ window.__ModuleLoader__.load({
 
 			// The list opens on the newest rows, which is what a person wants to
 			// quote and where they expect to be looking.
+			//
+			// It must not also do that when a page of *earlier* rows is inserted
+			// above: jumping to the bottom there would throw away the position the
+			// reader just scrolled to in order to click the button. So when an
+			// anchor was recorded, the previously-topmost row is held at the same
+			// offset and the anchor is consumed; otherwise the list goes to the end,
+			// which is right for a fresh fetch or the picker opening.
 			React.useEffect(() => {
 				const node = listRef.current
 				if (node === null) return
+				const anchorSeq = anchoredRef.current
+				if (anchorSeq !== null) {
+					anchoredRef.current = null
+					const anchor = node.querySelector(`[data-seq="${anchorSeq}"]`)
+					if (anchor !== null) {
+						node.scrollTop = anchor.offsetTop - node.offsetTop
+						return
+					}
+				}
 				node.scrollTop = node.scrollHeight
-			}, [messages, pickerOpen])
+			}, [messages, pickerOpen, pageSize])
 
 			const toggle = React.useCallback((seq) => {
 				setSelected((current) => {
@@ -2017,35 +2059,73 @@ window.__ModuleLoader__.load({
 				])
 			}
 
-			const list = messages === null
+			// Paged from the newest rows backwards. The list opens scrolled to the
+			// bottom, so the newest few are what a person reads and picks from;
+			// older rows are pulled in a page at a time from the top. Selection is
+			// by `seq`, not by mounted row, so 全选 and 选末尾 still act on the whole
+			// session however few rows are on screen.
+			const total = messages === null ? 0 : messages.length
+			const start = Math.max(0, total - pageSize)
+			const hiddenEarlier = start > 0
+			const shown = messages === null ? null : messages.slice(start)
+			const list = shown === null
 				? h('div', { className: 'dswc-notice' }, t('picker.loading'))
-				: messages.length === 0
+				: shown.length === 0
 					? h('div', { className: 'dswc-notice' }, [
 						h('p', { key: 'a' }, advanced ? t('picker.emptyAdvanced') : t('picker.empty')),
 						loadError === '' ? null : h('p', { key: 'b', className: 'dswc-muted' }, loadError),
 					])
-					: h('div', { className: 'dswc-list', ref: listRef }, messages.map((row) => h('label', {
-						key: row.seq,
-						className: 'dswc-row',
-						'data-role': row.role,
-						'data-kind': row.kind ?? row.role,
-					}, [
-						h('input', {
-							key: 'box',
-							type: 'checkbox',
-							checked: selected.has(row.seq),
-							onChange: () => toggle(row.seq),
-						}),
-						h('span', {
-							key: 'role',
-							className: 'dswc-role',
-							title: kindLabel(row, labels),
+					: h('div', { className: 'dswc-list', ref: listRef }, [
+						hiddenEarlier
+							? h('div', { key: 'more', className: 'dswc-more' }, [
+								h('button', {
+									key: 'load',
+									type: 'button',
+									className: 'dswc-button',
+									onClick: () => {
+										// Remember the topmost visible row, so the effect
+										// above can hold the reader's place while the
+										// earlier rows are inserted above it.
+										const node = listRef.current
+										const first = node === null
+											? null
+											: node.querySelector('.dswc-row')
+										anchoredRef.current = first === null
+											? null
+											: first.getAttribute('data-seq')
+										setPageSize((size) => size + LIST_PAGE_SIZE)
+									},
+								}, format(t('action.loadEarlier'), {
+									count: Math.min(LIST_PAGE_SIZE, start),
+								})),
+								h('span', { key: 'left', className: 'dswc-muted' },
+									format(t('picker.hiddenEarlier'), { count: start })),
+							])
+							: null,
+						...shown.map((row) => h('label', {
+							key: row.seq,
+							className: 'dswc-row',
+							'data-role': row.role,
+							'data-kind': row.kind ?? row.role,
+							'data-seq': String(row.seq),
 						}, [
-							KindIcon(row.kind ?? row.role),
-							h('span', { key: 'label', className: 'dswc-roleLabel' }, kindLabel(row, labels)),
-						]),
-						h('span', { key: 'text', className: 'dswc-text' }, row.text),
-					])))
+							h('input', {
+								key: 'box',
+								type: 'checkbox',
+								checked: selected.has(row.seq),
+								onChange: () => toggle(row.seq),
+							}),
+							h('span', {
+								key: 'role',
+								className: 'dswc-role',
+								title: kindLabel(row, labels),
+							}, [
+								KindIcon(row.kind ?? row.role),
+								h('span', { key: 'label', className: 'dswc-roleLabel' }, kindLabel(row, labels)),
+							]),
+							h('span', { key: 'text', className: 'dswc-text' }, row.text),
+						])),
+					])
 
 			return h('div', { className: 'dswc-root' }, [
 				toolbar,

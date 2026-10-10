@@ -150,6 +150,43 @@ describe('messages route', () => {
     ])
   })
 
+  it('does not re-read an unchanged session on every open', async () => {
+    // readSession parses the whole log — measured at 2.3 seconds for a 3.6 MB
+    // session, synchronous work on the host — and the picker did it on every open,
+    // which is what made opening it look like a freeze. The log only grows, so the
+    // extracted rows stay valid while the event count is unchanged.
+    let reads = 0
+    const events = [
+      { seq: 1, type: 'user/message', data: { source: { kind: 'user' }, content: [{ type: 'text', text: 'one' }] } },
+    ]
+    const host = hostWith({
+      readSession: async () => {
+        reads += 1
+        return { events }
+      },
+    })
+    const first = await host.call(ROUTES.messages, { query: 'sessionId=cache-1' })
+    assert.equal(first.body.cached, false)
+    assert.equal(reads, 1)
+
+    const second = await host.call(ROUTES.messages, { query: 'sessionId=cache-1' })
+    assert.equal(second.body.cached, true)
+    assert.equal(reads, 2, 'readSession is still consulted, to compare the count')
+    assert.deepEqual(second.body.messages, first.body.messages)
+  })
+
+  it('re-reads once the session has grown', async () => {
+    const events = [
+      { seq: 1, type: 'user/message', data: { source: { kind: 'user' }, content: [{ type: 'text', text: 'one' }] } },
+    ]
+    const host = hostWith({ readSession: async () => ({ events }) })
+    await host.call(ROUTES.messages, { query: 'sessionId=cache-2' })
+    events.push({ seq: 2, type: 'user/message', data: { source: { kind: 'user' }, content: [{ type: 'text', text: 'two' }] } })
+    const grown = await host.call(ROUTES.messages, { query: 'sessionId=cache-2' })
+    assert.equal(grown.body.cached, false)
+    assert.equal(grown.body.messages.length, 2)
+  })
+
   it('lists the machinery only when asked for advanced rows', async () => {
     const events = [
       { seq: 1, type: 'user/message', data: { source: { kind: 'user' }, content: [{ type: 'text', text: 'hi' }] } },

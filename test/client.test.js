@@ -316,6 +316,29 @@ describe('picker affordances', () => {
   it('clears the selection once the content has been pushed', () => {
     assert.ok(bundle.includes('setSelected(new Set())'))
   })
+
+  it('pages the list instead of mounting every row at once', () => {
+    // A session can hold hundreds of rows (one measured at 555, ~168 KB) and
+    // building plus laying out all of them blocks the main thread — 73 ms for
+    // 555, mostly the forced layout. The newest page mounts; earlier rows come in
+    // on request.
+    assert.ok(bundle.includes('const LIST_PAGE_SIZE = 10'))
+    assert.ok(bundle.includes('messages.slice(start)'), 'the window must be a slice')
+    assert.ok(bundle.includes('setPageSize((size) => size + LIST_PAGE_SIZE)'), 'no way to grow it')
+    assert.ok(bundle.includes("t('action.loadEarlier')"))
+    // Selection is by seq, so the bulk actions still cover the whole session.
+    assert.ok(bundle.includes('new Set((messages ?? []).map((row) => row.seq))'))
+  })
+
+  it('holds the reader place when earlier rows are inserted above', () => {
+    // Growing the window must not jump to the bottom, or the position the reader
+    // scrolled to in order to click the button is thrown away.
+    assert.ok(bundle.includes('anchoredRef'), 'the anchor is gone')
+    assert.ok(bundle.includes('data-seq'), 'rows are not addressable')
+    // The anchor is consumed, so a later fetch still scrolls to the newest rows.
+    assert.ok(bundle.includes('anchoredRef.current = null'))
+    assert.ok(bundle.includes('setPageSize(LIST_PAGE_SIZE)'), 'a new fetch must start at page one')
+  })
 })
 
 describe('following the DSH Session', () => {
