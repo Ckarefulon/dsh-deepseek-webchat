@@ -415,29 +415,33 @@ carries `publishConfig` (`access: public`, `registry: https://registry.npmjs.org
 so a plain `npm publish` targets the right registry with no extra flags — even
 though a local `~/.npmrc` may point at a mirror.
 
-Later releases go through `.github/workflows/publish.yml`, which authenticates
-with npm **Trusted Publishing** (OIDC): GitHub mints a short-lived token for the
-job and npm exchanges it for a publish token scoped to this one package. There
-is **no `NPM_TOKEN` secret anywhere**. The workflow deliberately does not use
-`actions/setup-node`'s `registry-url` input — that writes
+Releases are **automatic**. Push to `main` and `.github/workflows/publish.yml`
+runs the suite, then publishes — but only if `package.json`'s `version` is one
+the registry does not already have. So the whole release procedure is:
+
+1. Bump `version` in `package.json`.
+2. Run `npm run build`, commit `src/` and `lib/` together (`npm test` fails if
+   they differ), and push to `main`.
+
+The run either publishes that version or reports that it is already live and
+exits successfully. **A push without a version bump is a no-op, not a
+failure** — which is why every change that should ship needs its own bump.
+Docs-only commits still trigger the workflow and still no-op.
+
+Authentication is npm **Trusted Publishing** (OIDC): GitHub mints a short-lived
+token for the job and npm exchanges it for a publish token scoped to this one
+package. There is **no `NPM_TOKEN` secret anywhere**. The workflow deliberately
+does not use `actions/setup-node`'s `registry-url` input — that writes
 `//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}` into `~/.npmrc`, and with
 no such variable defined the placeholder survives as a literal string that npm
 would send as the token. `publishConfig.registry` already names the registry.
-
-Release procedure:
-
-1. Bump `version` in `package.json`, run `npm run build`, and commit `src/` and
-   `lib/` together (`npm test` fails if they differ).
-2. Publish a GitHub Release for that commit. The workflow runs the suite and
-   then `npm publish`; npm refuses to republish a version that already exists,
-   so a re-run cannot clobber what is live.
 
 <details>
 <summary>One-time setup: attaching the trusted publisher</summary>
 
 A trusted publisher can only be attached to a package that **already exists on
-the registry**, so the very first release is published by hand (`npm publish`
-from a checkout); only afterwards does the workflow take over. On npmjs.com:
+the registry**, so the very first release was published by hand (`npm publish`
+from a checkout); the workflow takes over from the second one. On npmjs.com:
 package → Settings → Trusted Publisher → GitHub Actions, then
 
 | Field | Value |
@@ -445,6 +449,9 @@ package → Settings → Trusted Publisher → GitHub Actions, then
 | Repository | `Ckarefulon/dsh-deepseek-webchat` |
 | Workflow filename | `publish.yml` |
 | Environment | *(leave blank)* |
+
+The filename must match exactly — npm ties the grant to it, and a mismatch
+shows up as the publish failing with `ENEEDAUTH`.
 
 </details>
 
