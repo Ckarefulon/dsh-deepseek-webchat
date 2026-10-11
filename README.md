@@ -17,6 +17,7 @@ browser uses.
 - [Known limitations](#known-limitations)
 - [How it works](#how-it-works)
 - [Development](#development)
+- [Publishing](#publishing)
 
 ## What it does
 
@@ -406,6 +407,46 @@ regress.
 
 If you hit that dialog, your installed copy is stale. Reinstall (see
 [Install](#install)) after pulling the fixed commit.
+
+## Publishing
+
+This package is published to npm as `dsh-deepseek-webchat`. `package.json`
+carries `publishConfig` (`access: public`, `registry: https://registry.npmjs.org/`),
+so a plain `npm publish` targets the right registry with no extra flags — even
+though a local `~/.npmrc` may point at a mirror.
+
+Later releases go through `.github/workflows/publish.yml`, which authenticates
+with npm **Trusted Publishing** (OIDC): GitHub mints a short-lived token for the
+job and npm exchanges it for a publish token scoped to this one package. There
+is **no `NPM_TOKEN` secret anywhere**. The workflow deliberately does not use
+`actions/setup-node`'s `registry-url` input — that writes
+`//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}` into `~/.npmrc`, and with
+no such variable defined the placeholder survives as a literal string that npm
+would send as the token. `publishConfig.registry` already names the registry.
+
+Release procedure:
+
+1. Bump `version` in `package.json`, run `npm run build`, and commit `src/` and
+   `lib/` together (`npm test` fails if they differ).
+2. Publish a GitHub Release for that commit. The workflow runs the suite and
+   then `npm publish`; npm refuses to republish a version that already exists,
+   so a re-run cannot clobber what is live.
+
+<details>
+<summary>One-time setup: attaching the trusted publisher</summary>
+
+A trusted publisher can only be attached to a package that **already exists on
+the registry**, so the very first release is published by hand (`npm publish`
+from a checkout); only afterwards does the workflow take over. On npmjs.com:
+package → Settings → Trusted Publisher → GitHub Actions, then
+
+| Field | Value |
+|---|---|
+| Repository | `Ckarefulon/dsh-deepseek-webchat` |
+| Workflow filename | `publish.yml` |
+| Environment | *(leave blank)* |
+
+</details>
 
 ## License
 
