@@ -41,7 +41,7 @@ Requires DSH Desktop **0.2.0-rc.1 or newer**, and a profile that is already
 initialised (the `desktop` profile is created by the app on first run).
 
 ```bash
-dsh plugin --profile desktop add github:Ckarefulon/dsh-deepseek-webchat
+dsh plugin --profile desktop add dsh-deepseek-webchat
 ```
 
 Then restart DSH Desktop. The tab appears in the sidebar column's guide, and a
@@ -64,7 +64,7 @@ dsh plugin --profile desktop add /absolute/path/to/dsh-deepseek-webchat
 <summary>Uninstalling</summary>
 
 ```bash
-dsh plugin --profile desktop remove @ckarefulon/dsh-deepseek-webchat
+dsh plugin --profile desktop remove dsh-deepseek-webchat
 ```
 
 Your bindings and saved login live in `~/.dsh/dsh-deepseek-webchat/` and are
@@ -83,8 +83,8 @@ That means the installed copy's `exports["./client"]` does not point at a real
 file. Fix it by reinstalling the plugin from a commit that has the flat layout:
 
 ```bash
-dsh plugin --profile desktop remove @ckarefulon/dsh-deepseek-webchat
-dsh plugin --profile desktop add github:Ckarefulon/dsh-deepseek-webchat
+dsh plugin --profile desktop remove dsh-deepseek-webchat
+dsh plugin --profile desktop add dsh-deepseek-webchat
 ```
 
 To confirm the layout before restarting, from the installed package directory:

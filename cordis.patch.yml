@@ -2,7 +2,7 @@
 # profile roster. Applied as a profile bundle layer (the `dsh.bundle.patch`
 # manifest field) over dsh-base; activate by adding this package to the
 # profile's `dsh.profile.bundles`, or with
-#   dsh plugin --profile desktop add github:Ckarefulon/dsh-deepseek-webchat
+#   dsh plugin --profile desktop add dsh-deepseek-webchat
 #
 # The row is a bare plugin by package name: the node half (exports ".") runs in
 # the Host process and serves this plugin's /api/dsh-deepseek-webchat routes,
@@ -17,4 +17,4 @@
 # one — the duplicate is rejected at boot.
 - insert:
     - id: deepseek-webchat
-      name: '@ckarefulon/dsh-deepseek-webchat'
+      name: 'dsh-deepseek-webchat'
