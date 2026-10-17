@@ -83,4 +83,15 @@ jobs:
             exit 0
           fi
           echo "::notice::publishing ${name}@${version}"
-          npm publish
+          # Trusted Publishing fails as a bare ENEEDAUTH, which names the symptom
+          # (no credentials) and not the cause (the OIDC exchange never happened).
+          # npm writes the cause to its own verbose log, so keep and show it: the
+          # line that matters is `oidc <reason>`, printed only at this level.
+          npm publish --loglevel verbose 2>&1 | tee /tmp/publish.log
+          status=${PIPESTATUS[0]}
+          if [ "$status" -ne 0 ]; then
+            echo "---- npm's own debug log (oidc lines) ----"
+            latest=$(ls -t /home/runner/.npm/_logs/*-debug-0.log | head -1)
+            grep -Ei 'oidc|id-token|id_token|auth' "$latest" || true
+            exit "$status"
+          fi
