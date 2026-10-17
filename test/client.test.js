@@ -609,6 +609,44 @@ describe('desktop guest channel', () => {
     assert.ok(bundle.includes('queueMicrotask'))
   })
 
+  /**
+   * The toolbar carries the panel's top rule, and it has to be the conversation
+   * header's rule, continued.
+   *
+   * The shell draws the conversation's horizontal line at the bottom of a 38px
+   * tab strip, and a tab body starts underneath it — so a toolbar of exactly 38
+   * pixels, border-box, puts its own rule on the same row. Measured against the
+   * live app before this was fixed: `padding:6px 8px` around 24px controls plus a
+   * 1px border came to 36px, which left this rule two pixels above the one it is
+   * meant to continue. The shell's own sidebar headers are all
+   * `height:38px; border-bottom:.5px solid var(--dsw-alias-border-l3)`.
+   */
+  it('puts the toolbar rule exactly on the conversation header line', () => {
+    const rule = /'\.dswc-toolbar\{([^}]*)\}'/.exec(bundle)
+    assert.ok(rule !== null, 'the stylesheet has no .dswc-toolbar rule')
+    const body = rule[1]
+
+    assert.ok(/box-sizing:border-box/.test(body), 'the toolbar must be border-box, or the rule is added to its height')
+    const height = /(?:^|;)height:(\d+)px/.exec(body)
+    assert.ok(height !== null, 'the toolbar must state a height, not derive one from padding')
+    assert.equal(Number(height[1]), 38, "the toolbar must be 38px: that is what the shell's tab strip measures")
+
+    const padding = /(?:^|;)padding:([^;]+)/.exec(body)
+    assert.ok(padding !== null, 'the toolbar must state its padding')
+    const parts = padding[1].trim().split(/\s+/)
+    // CSS shorthand: one value is all four sides, two are vertical/horizontal,
+    // three are top/horizontal/bottom, four are clockwise from the top.
+    const vertical = parts.length <= 2 ? [parts[0], parts[0]] : [parts[0], parts[2]]
+    for (const part of vertical) {
+      assert.equal(part, '0', `vertical padding (${padding[1]}) would fight the fixed height`)
+    }
+
+    assert.ok(
+      /border-bottom:\.5px solid var\(--dsw-alias-border-l3/.test(body),
+      "the rule must be the shell's .5px border-l3 hairline",
+    )
+  })
+
   it('confines the login snapshot to the DeepSeek origin', () => {
     // The guest starts on about:blank#<lease>, where localStorage throws and
     // document.cookie is empty. Saving that would erase the real snapshot, so
