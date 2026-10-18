@@ -536,26 +536,37 @@ describe('desktop guest channel', () => {
     assert.ok(deps[1].includes('pickerOpen'))
   })
 
-  it('rounds the measured rectangle before comparing it to the style', () => {
+  it('rounds the measured rectangle inward, never over the pane border', () => {
     // `getBoundingClientRect()` returns fractions (705.4000244140625) while the
     // style object returns the browser's normalised form. Comparing the raw float
     // string against that never matches, so every pass rewrote all four
     // properties — and on a <webview> a geometry write re-composites. That was
     // four writes a second, which is a flicker, on a rectangle that had not
-    // actually changed at all. Rounding makes an unchanged rect compare equal.
+    // actually changed at all.
+    //
+    // The direction of the rounding is a separate, load-bearing decision. The
+    // right column's left edge is fractional (the dock is a `1fr` grid track) and
+    // the pane it hosts carries the `.5px` `border-left` that is the vertical
+    // divider between the conversation and the sidebar. `Math.round` moves this
+    // opaque overlay's left edge left by up to half a CSS pixel, onto that one
+    // device pixel, and the divider disappears — the reported symptom. Inward
+    // rounding (ceil near edges, floor far ones) keeps the overlay inside the
+    // measured box, so the border can never be painted over.
     const at = bundle.indexOf('function showOverlay(')
     assert.ok(at > -1)
     const body = bundle.slice(at, bundle.indexOf('function setOverlaySuppressed'))
-    for (const axis of ['rect.left', 'rect.top', 'rect.width', 'rect.height']) {
-      assert.ok(
-        body.includes(`Math.round(${axis})`),
-        `${axis} must be rounded before it is written`,
-      )
-    }
+    assert.ok(body.includes('Math.ceil(rect.left)'), 'the left edge must round inward (toward the content)')
+    assert.ok(body.includes('Math.ceil(rect.top)'), 'the top edge must round inward')
+    assert.ok(body.includes('Math.floor(rect.left + rect.width)'), 'the right edge must round inward')
+    assert.ok(body.includes('Math.floor(rect.top + rect.height)'), 'the bottom edge must round inward')
+    // The old outward-or-either-way rounding must be gone from the geometry
+    // writes, or the divider comes back depending on the column's pixel phase.
+    // (The diagnostics snapshot still rounds, for reporting only — it never
+    // places anything, so it is matched by assignment rather than by call.)
     assert.equal(
-      /const (left|top|width|height) = rect\.(left|top|width|height) \+ 'px'/.test(body),
+      /const (left|top|width|height) = Math\.round\(rect\.(left|top|width|height)\)/.test(body),
       false,
-      'a raw fractional rect is being written again',
+      'a Math.round geometry write would cover the sidebar divider again',
     )
   })
 

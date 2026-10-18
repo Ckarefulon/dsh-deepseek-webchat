@@ -350,6 +350,60 @@ function clip(text, limit = 2000) {
 }
 
 /**
+ * How much of one row's text is worth sending to the picker.
+ *
+ * A row is a one-line-tall box that the reader scrolls past; 4000 characters is
+ * already far more than anyone reads there, and the rows that exceed it are
+ * tool results and reasoning blobs of 40–50 KB. Measured on a real session: the
+ * advanced row set was **8.9 MB of JSON** for 8770 rows, dominated by exactly
+ * those few huge rows. Capping them at 4000 took it to 6.5 MB, and combined with
+ * the payload budget below the panel no longer has to move ten megabytes through
+ * the HTTP route and into a React list on every open.
+ */
+const MAX_ROW_CHARS = 4000
+
+/**
+ * Rough cap on the total text a single `messages` response may carry.
+ *
+ * The picker pages backwards from the newest rows, so when a session is bigger
+ * than this the *newest* rows are the ones worth keeping: the oldest are dropped
+ * and the count is reported, which is the same information the "load earlier"
+ * button already conveys. 2 MB of text is ~5000 default rows or ~500 advanced
+ * ones — more than a picker session ever needs to show.
+ */
+const MAX_PAYLOAD_CHARS = 2 * 1000 * 1000
+
+/**
+ * Enforce the per-row cap and the payload budget on extracted rows.
+ *
+ * The budget drops from the *old* end, because the list opens on the newest rows.
+ * @param rows - rows from {@link extractMessages}.
+ * @returns `{ rows, dropped }` — the rows to send and how many were left out.
+ */
+export function boundRows(rows) {
+  if (!Array.isArray(rows)) return { rows: [], dropped: 0 }
+  let budget = MAX_PAYLOAD_CHARS
+  const kept = []
+  let dropped = 0
+  for (let index = rows.length - 1; index >= 0; index -= 1) {
+    const row = rows[index]
+    let text = row.text
+    if (text.length > MAX_ROW_CHARS) text = text.slice(0, MAX_ROW_CHARS) + ' …'
+    if (text.length > budget && kept.length > 0) {
+      // Out of budget: everything older than this is dropped as well, so the
+      // surviving rows are always one contiguous newest-first suffix.
+      dropped = index + 1
+      break
+    }
+    budget -= text.length
+    kept.push(text === row.text ? row : { ...row, text })
+  }
+  // `kept` was filled newest-first; the caller wants log order.
+  kept.reverse()
+  return { rows: kept, dropped }
+}
+
+/**
  * Reduce one Session's raw event log to the rows a human would recognise.
  *
  * Default set: the human's turns, the assistant's replies, the questions the
@@ -709,14 +763,25 @@ export function loadGuestSession() {
 /**
  * Cache of extracted rows, keyed by session id and mode.
  *
- * Reading one session costs `sessionQuery.readSession`, which parses the whole
- * session log — measured at 2.3 seconds for a 3.6 MB session, and that read is
- * synchronous work on the host. Opening the picker did it every time, so the
- * panel appeared to freeze for seconds on each open even though nothing was
- * looping. The log only ever grows, so a result stays valid while the session's
- * event count is unchanged, and that count is cheap to read.
+ * Reading one session costs `sessionQuery.readSession`, which decodes and
+ * parses the *whole* session log. That is not a cheap call: a real session here
+ * holds a 10.7 MB zstd log with 7176 frames and 12 188 events, which measured
+ * **~1.2 s of straight-line CPU** (683 ms decode + 485 ms JSON parse) before the
+ * harness's own replay validation — and the response the picker then renders was
+ * 8.9 MB of JSON for the advanced row set. The earlier version of this cache
+ * still called `readSession` on every open just to compare the event count, so
+ * the expensive half always ran; that is what made opening the picker feel like
+ * a freeze. The freshness check now uses a token read from the session itself —
+ * the live `seq`, or `sessionPersistence.stat`'s revision for a cold one — so a
+ * repeat open costs a cheap token plus a JSON write.
  *
- * @type {Map<string, { count: number, messages: object[] }>}
+ * Staleness rule: an entry is trusted when the token observed *before* the log
+ * was read is the one observed now. A live `seq` and a stored revision both only
+ * advance, so an equal token proves nothing was appended since, and a different
+ * one merely costs a re-read — the failure direction is "slow once", never
+ * "stale".
+ *
+ * @type {Map<string, { token: string | undefined, count: number, messages: object[], dropped: number }>}
  */
 const messageCache = new Map()
 
@@ -730,6 +795,51 @@ const MESSAGE_CACHE_LIMIT = 8
  */
 function messageCacheKey(sessionId, advanced) {
   return (advanced ? 'a\u0000' : 'p\u0000') + sessionId
+}
+
+/**
+ * The log's change token, read without decoding the log.
+ *
+ * Two sources, because a Session is two things:
+ *
+ * - **Live** (an open session this Host is driving): `ctx.sessions.get()` hands
+ *   back the in-memory object and its `seq` is the exact last event, including
+ *   events that have not reached storage yet. This matters: `persistence.stat`
+ *   only reports what has been *flushed*, so using it for a live session would
+ *   let the cache serve rows that predate the last few turns of the very
+ *   conversation being read. A live `seq` is both exact and free.
+ * - **Cold** (persisted, nothing live): `sessionPersistence.stat` — documented
+ *   for "derived read-model caches keyed off `stat`/`list`" — reads the stored
+ *   header and byte size without decoding the event stream.
+ *
+ * Either way this is the difference between a ~1 s freeze and a sub-millisecond
+ * lookup on every reopen.
+ * @param ctx - Host context.
+ * @param sessionId - DSH Session id.
+ * @returns an opaque token, or undefined when this profile cannot say.
+ */
+async function sessionToken(ctx, sessionId) {
+  const sessions = ctx.get('sessions')
+  if (sessions !== undefined && typeof sessions.get === 'function') {
+    try {
+      const live = sessions.get(sessionId)
+      const seq = live?.seq
+      if (typeof seq === 'number') return 'live:' + seq
+    } catch (error) {
+      // Fall through to the stored token.
+    }
+  }
+  const persistence = ctx.get('sessionPersistence')
+  if (persistence === undefined || typeof persistence.stat !== 'function') return undefined
+  try {
+    const snapshot = await persistence.stat(sessionId)
+    const revision = snapshot?.revision
+    return typeof revision === 'string' ? 'stored:' + revision : undefined
+  } catch (error) {
+    // A session the persistence layer cannot see is not an error: it just means
+    // "no cheap freshness signal, go read it".
+    return undefined
+  }
 }
 
 /**
@@ -748,23 +858,39 @@ async function readSessionMessages(ctx, sessionId, advanced = false) {
     return { ok: false, error: 'a session id is required', messages: [] }
   }
   try {
+    const key = messageCacheKey(sessionId, advanced)
+    // Read the token *before* the expensive call, so a concurrent append during
+    // it can only make the recorded token older than the data — which misses
+    // the cache next time instead of serving rows that predate the log.
+    const token = await sessionToken(ctx, sessionId)
+    const cached = messageCache.get(key)
+    if (cached !== undefined && token !== undefined && cached.token === token) {
+      // Re-insert so this entry is counted as the most recently used.
+      messageCache.delete(key)
+      messageCache.set(key, cached)
+      return { ok: true, error: '', messages: cached.messages, dropped: cached.dropped, cached: true }
+    }
     const session = await query.readSession(sessionId)
     const events = session?.events
     const count = Array.isArray(events) ? events.length : 0
-    const key = messageCacheKey(sessionId, advanced)
-    const cached = messageCache.get(key)
-    if (cached !== undefined && cached.count === count) {
-      return { ok: true, error: '', messages: cached.messages, cached: true }
+    // Without a token the only cheap signal is the event count, which still
+    // skips extraction but cannot skip the read.
+    if (cached !== undefined && token === undefined && cached.count === count) {
+      return { ok: true, error: '', messages: cached.messages, dropped: cached.dropped, cached: true }
     }
     const messages = extractMessages(events, { advanced })
+    // Bounded once, here, so the cached rows are already the rows that get sent:
+    // capping at the route instead would redo the work on every request and make
+    // the cache store something other than what the caller receives.
+    const bounded = boundRows(messages)
     // Re-inserting moves the key to the end, so the oldest falls out first.
     messageCache.delete(key)
-    messageCache.set(key, { count, messages })
+    messageCache.set(key, { token, count, messages: bounded.rows, dropped: bounded.dropped })
     while (messageCache.size > MESSAGE_CACHE_LIMIT) {
       const oldest = messageCache.keys().next().value
       messageCache.delete(oldest)
     }
-    return { ok: true, error: '', messages, cached: false }
+    return { ok: true, error: '', messages: bounded.rows, dropped: bounded.dropped, cached: false }
   } catch (error) {
     return { ok: false, error: messageOf(error), messages: [] }
   }

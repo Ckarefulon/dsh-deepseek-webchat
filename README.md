@@ -256,6 +256,14 @@ login. Separate DSH Sessions do **not** get separate DeepSeek accounts.
 when you send something, so a DSH Session stays unbound until you send at least
 one message in the page. Until then the toolbar dot is hollow.
 
+**A very long session lists only its newer rows.** The picker pages backwards
+from the newest rows, and a reply larger than ~2 MB of text is not worth moving
+through the HTTP route into a React list, so the host leaves the oldest rows out
+and the list says how many. This only affects sessions in the thousands of rows
+(and, with 高级 on, sessions with tens of megabytes of tool output). Individual
+rows are also capped at 4000 characters — a picker row is one line tall, and the
+outliers are 40–50 KB tool results.
+
 **DeepSeek can change its page.** The composer fill targets
 `textarea.ds-textarea__textarea`, and the conversation id is read from DeepSeek's
 `/a/<agent>/s/<id>` route. If DeepSeek redesigns either, the fill or the binding
@@ -290,6 +298,20 @@ serves five routes under `/api/dsh-deepseek-webchat/`:
 It reads messages through `ctx.sessionQuery.readSession()`, which is
 live-preferred, and reduces the raw event log with the same text-extraction
 rules the harness itself uses.
+
+That read is expensive — it decodes and parses the whole log — so the extracted
+rows are cached and revalidated with a cheap token. For a **live** session that
+token is the in-memory `seq` (`ctx.sessions.get()`), which is exact and includes
+events not yet flushed; for a **cold** one it is `ctx.sessionPersistence.stat()`'s
+revision, which reads the stored header and size without decoding anything. An
+unchanged token serves the cached rows without calling `readSession` at all.
+Measured on a real session (10.7 MB zstd log, 7176 frames, 12 188 events): the
+read itself is ~1.2 s of straight-line CPU, and a revalidated reopen is a token
+read plus a JSON write.
+
+Responses are bounded: one row carries at most 4000 characters, and a reply is
+capped at ~2 MB of text, dropping the oldest rows (they are reported back as
+`dropped`) because the list opens on the newest ones.
 
 The `advanced` flag is honoured **host-side**, so the default response never
 contains a reasoning or tool row at all — the browser half cannot accidentally

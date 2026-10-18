@@ -30,12 +30,19 @@ after(() => {
 /**
  * Build a stub host context and run `apply`, collecting the routes.
  * @param sessionQuery - optional `sessionQuery` service.
+ * @param sessionPersistence - optional `sessionPersistence` service (`stat`).
+ * @param sessions - optional `sessions` service (`get`).
  * @returns `{ routes, call }`.
  */
-function hostWith(sessionQuery) {
+function hostWith(sessionQuery, sessionPersistence, sessions) {
   const routes = new Map()
   const ctx = {
-    get: (service) => (service === 'sessionQuery' ? sessionQuery : undefined),
+    get: (service) => {
+      if (service === 'sessionQuery') return sessionQuery
+      if (service === 'sessionPersistence') return sessionPersistence
+      if (service === 'sessions') return sessions
+      return undefined
+    },
     webServer: {
       register: (route) => {
         routes.set(route.path, route)
@@ -77,6 +84,25 @@ function hostWith(sessionQuery) {
       }
       await route.handler(req, res)
       return { status, body: text === '' ? null : JSON.parse(text) }
+    },
+  }
+}
+
+/**
+ * A `stat` stub whose reported revision the test controls.
+ * @param revision - the revision to report; a function is called per stat.
+ * @returns the stub service plus the list of ids it was asked about.
+ */
+function persistenceWith(revision) {
+  const asked = []
+  return {
+    asked,
+    service: {
+      stat: async (id) => {
+        asked.push(id)
+        const value = typeof revision === 'function' ? revision(id) : revision
+        return value === undefined ? undefined : { revision: value }
+      },
     },
   }
 }
@@ -151,10 +177,65 @@ describe('messages route', () => {
   })
 
   it('does not re-read an unchanged session on every open', async () => {
-    // readSession parses the whole log — measured at 2.3 seconds for a 3.6 MB
-    // session, synchronous work on the host — and the picker did it on every open,
-    // which is what made opening it look like a freeze. The log only grows, so the
-    // extracted rows stay valid while the event count is unchanged.
+    // readSession decodes and parses the whole log — measured at ~1.2 s of
+    // straight-line CPU on a real 10.7 MB / 12 188-event session — and the picker
+    // used to do it on every open just to compare the event count, so the
+    // expensive half always ran. `sessionPersistence.stat` reads the stored
+    // header and size without decoding, and its revision is the freshness token.
+    let reads = 0
+    const events = [
+      { seq: 1, type: 'user/message', data: { source: { kind: 'user' }, content: [{ type: 'text', text: 'one' }] } },
+    ]
+    const persistence = persistenceWith('rev-1')
+    const host = hostWith({
+      readSession: async () => {
+        reads += 1
+        return { events }
+      },
+    }, persistence.service)
+    const first = await host.call(ROUTES.messages, { query: 'sessionId=cache-1' })
+    assert.equal(first.body.cached, false)
+    assert.equal(reads, 1)
+
+    const second = await host.call(ROUTES.messages, { query: 'sessionId=cache-1' })
+    assert.equal(second.body.cached, true)
+    assert.equal(reads, 1, 'an unchanged revision must not call readSession again')
+    assert.deepEqual(second.body.messages, first.body.messages)
+    // The cheap check is what ran instead.
+    assert.ok(persistence.asked.includes('cache-1'))
+  })
+
+  it('re-reads once the log revision advances', async () => {
+    let revision = 'rev-1'
+    const events = [
+      { seq: 1, type: 'user/message', data: { source: { kind: 'user' }, content: [{ type: 'text', text: 'one' }] } },
+    ]
+    let reads = 0
+    const persistence = persistenceWith(() => revision)
+    const host = hostWith({
+      readSession: async () => {
+        reads += 1
+        return { events }
+      },
+    }, persistence.service)
+    await host.call(ROUTES.messages, { query: 'sessionId=cache-rev' })
+    assert.equal(reads, 1)
+    // Same revision: served from cache.
+    revision = 'rev-1'
+    await host.call(ROUTES.messages, { query: 'sessionId=cache-rev' })
+    assert.equal(reads, 1)
+    // A new revision means the log grew, so the rows must be rebuilt.
+    revision = 'rev-2'
+    events.push({ seq: 2, type: 'user/message', data: { source: { kind: 'user' }, content: [{ type: 'text', text: 'two' }] } })
+    const grown = await host.call(ROUTES.messages, { query: 'sessionId=cache-rev' })
+    assert.equal(grown.body.cached, false)
+    assert.equal(grown.body.messages.length, 2)
+    assert.equal(reads, 2)
+  })
+
+  it('still reads the log when the profile cannot report a revision', async () => {
+    // No sessionPersistence at all: the count check still avoids re-extracting,
+    // but the read itself cannot be skipped, and the answer must stay correct.
     let reads = 0
     const events = [
       { seq: 1, type: 'user/message', data: { source: { kind: 'user' }, content: [{ type: 'text', text: 'one' }] } },
@@ -165,14 +246,49 @@ describe('messages route', () => {
         return { events }
       },
     })
-    const first = await host.call(ROUTES.messages, { query: 'sessionId=cache-1' })
+    const first = await host.call(ROUTES.messages, { query: 'sessionId=cache-nostat' })
+    const second = await host.call(ROUTES.messages, { query: 'sessionId=cache-nostat' })
+    assert.equal(reads, 2)
+    assert.equal(second.body.cached, true)
+    assert.deepEqual(second.body.messages, first.body.messages)
+  })
+
+  it('follows a live session by its in-memory seq, not by what has been flushed', async () => {
+    // `persistence.stat` only reports what reached storage. A live session that
+    // took three turns since the last flush has new events `stat` cannot see, so
+    // keying freshness on it would serve rows that predate those turns. The live
+    // session object's own `seq` is exact, and free to read.
+    let reads = 0
+    const live = { seq: 10 }
+    const events = [
+      { seq: 1, type: 'user/message', data: { source: { kind: 'user' }, content: [{ type: 'text', text: 'one' }] } },
+    ]
+    const sessions = { get: (id) => (id === 'live-1' ? live : undefined) }
+    // A stat whose revision never moves, so only the live seq can drive this.
+    const persistence = persistenceWith('stale-revision')
+    const host = hostWith({
+      readSession: async () => {
+        reads += 1
+        return { events }
+      },
+    }, persistence.service, sessions)
+
+    const first = await host.call(ROUTES.messages, { query: 'sessionId=live-1' })
     assert.equal(first.body.cached, false)
     assert.equal(reads, 1)
 
-    const second = await host.call(ROUTES.messages, { query: 'sessionId=cache-1' })
+    // Unchanged live seq: cached.
+    const second = await host.call(ROUTES.messages, { query: 'sessionId=live-1' })
     assert.equal(second.body.cached, true)
-    assert.equal(reads, 2, 'readSession is still consulted, to compare the count')
-    assert.deepEqual(second.body.messages, first.body.messages)
+    assert.equal(reads, 1)
+
+    // A new turn advanced the live seq without any flush: must re-read.
+    live.seq = 14
+    events.push({ seq: 2, type: 'user/message', data: { source: { kind: 'user' }, content: [{ type: 'text', text: 'two' }] } })
+    const third = await host.call(ROUTES.messages, { query: 'sessionId=live-1' })
+    assert.equal(third.body.cached, false)
+    assert.equal(reads, 2)
+    assert.equal(third.body.messages.length, 2)
   })
 
   it('re-reads once the session has grown', async () => {
@@ -201,6 +317,43 @@ describe('messages route', () => {
     assert.deepEqual(plain.body.messages.map((row) => row.kind), ['user', 'assistant'])
     const rich = await host.call(ROUTES.messages, { query: 'sessionId=s1&advanced=1' })
     assert.deepEqual(rich.body.messages.map((row) => row.kind), ['user', 'assistant', 'reasoning', 'tool-call'])
+  })
+
+  it('caps one huge row so the picker never receives the whole blob', async () => {
+    // A tool result / reasoning row on a real session reached 49 933 characters,
+    // and the advanced set of 8770 such rows serialised to 8.9 MB — most of it
+    // concentrated in a handful of outliers. The picker row is one line tall;
+    // 4000 characters is already more than anyone reads there.
+    const blob = 'x'.repeat(49_933)
+    const events = [
+      { seq: 1, type: 'tool/result', data: { message: { content: [{ type: 'text', text: blob }] } } },
+    ]
+    const host = hostWith({ readSession: async () => ({ events }) })
+    const { body } = await host.call(ROUTES.messages, { query: 'sessionId=huge&advanced=1' })
+    assert.equal(body.messages.length, 1)
+    const text = body.messages[0].text
+    assert.ok(text.length < 5000, `row text was ${text.length} characters, the cap did not apply`)
+    assert.ok(text.endsWith('…'), 'a truncated row must say it was truncated')
+  })
+
+  it('drops the oldest rows rather than send an unbounded response', async () => {
+    // The list opens on the newest rows, so when a session is over budget the
+    // oldest are the ones that can go — and the count has to come back with them
+    // so the panel can say so instead of silently disagreeing with 全选.
+    const big = 'y'.repeat(4000)
+    const events = []
+    for (let i = 0; i < 1200; i += 1) {
+      events.push({ seq: i + 1, type: 'tool/result', data: { message: { content: [{ type: 'text', text: big }] } } })
+    }
+    const host = hostWith({ readSession: async () => ({ events }) })
+    const { body } = await host.call(ROUTES.messages, { query: 'sessionId=budget&advanced=1' })
+    assert.ok(body.messages.length < 1200, 'the whole session was sent')
+    assert.ok(body.dropped > 0, 'the dropped count must be reported')
+    assert.equal(body.messages.length + body.dropped, 1200)
+    // What survived must be the newest rows, in log order.
+    assert.equal(body.messages.at(-1).seq, 1200)
+    const seqs = body.messages.map((row) => row.seq)
+    assert.deepEqual(seqs, [...seqs].sort((a, b) => a - b), 'surviving rows must stay in log order')
   })
 
   it('explains a missing session id rather than throwing', async () => {

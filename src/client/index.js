@@ -151,6 +151,7 @@ window.__ModuleLoader__.load({
 			'picker.loading': '正在读取会话…',
 			'picker.selected': '已选 {count} 条',
 			'picker.hiddenEarlier': '上面还有 {count} 条更早的',
+			'picker.droppedEarlier': '这个会话太长，最前面 {count} 条没有列出',
 			'action.loadEarlier': '加载更早的 {count} 条',
 			'picker.role.user': '用户',
 			'picker.role.assistant': '助手',
@@ -208,6 +209,7 @@ window.__ModuleLoader__.load({
 			'picker.loading': 'Reading the session…',
 			'picker.selected': '{count} selected',
 			'picker.hiddenEarlier': '{count} earlier rows above',
+			'picker.droppedEarlier': 'This session is long: the oldest {count} rows are not listed',
 			'action.loadEarlier': 'Load {count} earlier',
 			'picker.role.user': 'User',
 			'picker.role.assistant': 'Assistant',
@@ -716,10 +718,37 @@ window.__ModuleLoader__.load({
 			// flicker that was still visible after the hide/show loop was fixed.
 			// Rounding makes an unchanged rectangle compare equal, so it is written
 			// once and then left alone.
-			const left = Math.round(rect.left) + 'px'
-			const top = Math.round(rect.top) + 'px'
-			const width = Math.round(rect.width) + 'px'
-			const height = Math.round(rect.height) + 'px'
+			//
+			// *Which way* it rounds is load-bearing: inward (ceil the near edges,
+			// floor the far ones), never `Math.round`.
+			//
+			// The right column does not start on a whole CSS pixel — the dock is a
+			// `1fr` grid track — and the pane it hosts carries the `.5px`
+			// `border-left` that is the vertical divider between the conversation and
+			// the sidebar. At this machine's 1.25 device scale that hairline is one
+			// device pixel, 0.625 CSS px. `Math.round` moves the overlay's left edge
+			// *left* by up to half a CSS pixel whenever the pane lands on x.5–x.99, so
+			// this opaque container covers exactly that device pixel and the divider
+			// disappears. Measured in the live app: with the overlay parked at
+			// `Math.round(rect.left)`, `elementFromPoint` on the border pixel returns
+			// the overlay instead of the pane. Only a tab body that parks something
+			// over the whole pane — this plugin — can lose the line; every other tab
+			// paints strictly inside its border box.
+			//
+			// Rounding inward keeps the overlay a subset of the measured rectangle, so
+			// the border is never painted over. The cost is at most one pixel of
+			// unused extent, invisible against the same background.
+			const leftEdge = Math.ceil(rect.left)
+			const topEdge = Math.ceil(rect.top)
+			const rightEdge = Math.floor(rect.left + rect.width)
+			const bottomEdge = Math.floor(rect.top + rect.height)
+			// A sub-pixel pane rounds to an empty box; refusing to park is better
+			// than parking on nothing.
+			if (rightEdge - leftEdge < 1 || bottomEdge - topEdge < 1) return
+			const left = leftEdge + 'px'
+			const top = topEdge + 'px'
+			const width = (rightEdge - leftEdge) + 'px'
+			const height = (bottomEdge - topEdge) + 'px'
 			const moved = style.left !== left || style.top !== top
 				|| style.width !== width || style.height !== height
 			// Written only when it actually changed.
@@ -1648,6 +1677,9 @@ window.__ModuleLoader__.load({
 			const [pickerOpen, setPickerOpen] = React.useState(false)
 			const [bound, setBound] = React.useState(null)
 			const [messages, setMessages] = React.useState(null)
+			// How many of the oldest rows the host left out of the response because
+			// it would have been too large to send. Zero for every ordinary session.
+			const [dropped, setDropped] = React.useState(0)
 			const [loadError, setLoadError] = React.useState('')
 			const [selected, setSelected] = React.useState(() => new Set())
 			const [question, setQuestion] = React.useState('')
@@ -1839,6 +1871,7 @@ window.__ModuleLoader__.load({
 				setPageSize(LIST_PAGE_SIZE)
 				anchoredRef.current = null
 				setMessages(null)
+				setDropped(0)
 				setLoadError('')
 				void (async () => {
 					try {
@@ -1858,10 +1891,18 @@ window.__ModuleLoader__.load({
 						}
 						const rows = Array.isArray(payload.messages) ? payload.messages : []
 						setMessages(rows)
+						// The host bounds the response (per-row and total size), so a
+						// very long session can arrive with its oldest rows already
+						// left out. There is no "load earlier" for those — the picker
+						// pages over what it received — so say how many are missing
+						// rather than let the count look wrong.
+						setDropped(Number.isFinite(payload.dropped) ? payload.dropped : 0)
 						diagEvent('picker:loaded', {
 							fetchMs: fetched,
 							rows: rows.length,
+							dropped: payload.dropped,
 							bytes: JSON.stringify(rows).length,
+							cached: payload.cached === true,
 						})
 					} catch (error) {
 						if (cancelled) return
@@ -2111,6 +2152,14 @@ window.__ModuleLoader__.load({
 									format(t('picker.hiddenEarlier'), { count: start })),
 							])
 							: null,
+						// Rows the host left out of the response entirely (it caps the
+						// total size of a reply). They are older than everything here
+						// and cannot be paged to, so say so once rather than silently
+						// disagreeing with 全选 and 选末尾.
+						dropped === 0
+							? null
+							: h('div', { key: 'dropped', className: 'dswc-more' },
+								format(t('picker.droppedEarlier'), { count: dropped })),
 						...shown.map((row) => h('label', {
 							key: row.seq,
 							className: 'dswc-row',
