@@ -291,6 +291,36 @@ describe('messages route', () => {
     assert.equal(third.body.messages.length, 2)
   })
 
+  it('finds the live session whichever id form the caller holds', async () => {
+    // DSH names the same Session two ways: the bare uuid from its query APIs and
+    // `session-<uuid>` from the store. `sessions.get` keys on the stored form, so
+    // a lookup with the other spelling must not fall through to a stale `stat`.
+    let reads = 0
+    const live = { seq: 7 }
+    const events = [
+      { seq: 1, type: 'user/message', data: { source: { kind: 'user' }, content: [{ type: 'text', text: 'one' }] } },
+    ]
+    const sessions = { get: (id) => (id === 'session-same-1' ? live : undefined) }
+    const persistence = persistenceWith('stale-revision')
+    const host = hostWith({
+      readSession: async () => {
+        reads += 1
+        return { events }
+      },
+    }, persistence.service, sessions)
+
+    // Asked for by the bare uuid, while the store knows the prefixed form.
+    await host.call(ROUTES.messages, { query: 'sessionId=same-1' })
+    const second = await host.call(ROUTES.messages, { query: 'sessionId=same-1' })
+    assert.equal(second.body.cached, true)
+    assert.equal(reads, 1)
+
+    live.seq = 9
+    const third = await host.call(ROUTES.messages, { query: 'sessionId=same-1' })
+    assert.equal(third.body.cached, false)
+    assert.equal(reads, 2)
+  })
+
   it('re-reads once the session has grown', async () => {
     const events = [
       { seq: 1, type: 'user/message', data: { source: { kind: 'user' }, content: [{ type: 'text', text: 'one' }] } },
