@@ -171,8 +171,8 @@ describe('messages route', () => {
     assert.equal(status, 200)
     assert.equal(body.ok, true)
     assert.deepEqual(body.messages, [
-      { seq: 2, role: 'user', kind: 'user', text: 'my question' },
-      { seq: 3, role: 'assistant', kind: 'assistant', text: 'my answer' },
+      { id: '2:0', seq: 2, role: 'user', kind: 'user', text: 'my question' },
+      { id: '3:0', seq: 3, role: 'assistant', kind: 'assistant', text: 'my answer' },
     ])
   })
 

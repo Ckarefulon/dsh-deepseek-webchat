@@ -139,8 +139,8 @@ describe('message extraction', () => {
       { seq: 7, type: 'tool/result', data: { message: { content: [{ type: 'text', text: 'output' }] } } },
     ])
     assert.deepEqual(rows, [
-      { seq: 4, role: 'user', kind: 'user', text: 'hello' },
-      { seq: 5, role: 'assistant', kind: 'assistant', text: 'hi there' },
+      { id: '4:0', seq: 4, role: 'user', kind: 'user', text: 'hello' },
+      { id: '5:0', seq: 5, role: 'assistant', kind: 'assistant', text: 'hi there' },
     ])
   })
 
@@ -159,9 +159,9 @@ describe('message extraction', () => {
       { seq: 3, type: 'user/message', data: { source: { kind: 'user-question-reply', callId: 'c1' }, content: [{ type: 'text', text: 'Sidebar, please' }] } },
     ])
     assert.deepEqual(rows, [
-      { seq: 1, role: 'assistant', kind: 'assistant', text: 'One question first.' },
-      { seq: 2, role: 'assistant', kind: 'question', text: 'Confirm：Which layout?\n  · Sidebar — right column\n  · Center' },
-      { seq: 3, role: 'user', kind: 'answer', text: 'Sidebar, please' },
+      { id: '1:0', seq: 1, role: 'assistant', kind: 'assistant', text: 'One question first.' },
+      { id: '2:0', seq: 2, role: 'assistant', kind: 'question', text: 'Confirm：Which layout?\n  · Sidebar — right column\n  · Center' },
+      { id: '3:0', seq: 3, role: 'user', kind: 'answer', text: 'Sidebar, please' },
     ])
   })
 
@@ -206,6 +206,25 @@ describe('message extraction', () => {
     // The default set keeps the todo list — the agent's own plan, which the user
     // is already looking at — and drops only the raw machinery.
     assert.deepEqual(extractMessages(events).map((row) => row.kind), ['assistant', 'todo'])
+  })
+
+  it('gives every row its own id, even when one event yields several', () => {
+    // An assistant message carries its text, its reasoning and one row per tool
+    // call, so `seq` alone is not a row identity. The picker ticks rows by id:
+    // keyed by seq, the rows that shared one also shared a single checkbox, and
+    // they collided as React child keys — which is what made those rows feel
+    // like they would not take a click.
+    const rows = extractMessages([
+      { seq: 9, type: 'assistant/message', data: { message: { content: [
+        { type: 'reasoning', text: 'think' },
+        { type: 'text', text: 'answer' },
+        { type: 'tool-call', id: 'c1', name: 'bash', arguments: '{"cmd":"ls"}' },
+        { type: 'tool-call', id: 'c2', name: 'bash', arguments: '{"cmd":"pwd"}' },
+      ] } } },
+    ], { advanced: true })
+    assert.deepEqual(rows.map((row) => row.kind), ['assistant', 'reasoning', 'tool-call', 'tool-call'])
+    assert.deepEqual(rows.map((row) => row.seq), [9, 9, 9, 9])
+    assert.deepEqual(rows.map((row) => row.id), ['9:0', '9:1', '9:2', '9:3'])
   })
 
   it('skips empty messages and survives junk', () => {

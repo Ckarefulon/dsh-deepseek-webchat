@@ -326,18 +326,41 @@ describe('picker affordances', () => {
     assert.ok(bundle.includes('messages.slice(start)'), 'the window must be a slice')
     assert.ok(bundle.includes('setPageSize((size) => size + LIST_PAGE_SIZE)'), 'no way to grow it')
     assert.ok(bundle.includes("t('action.loadEarlier')"))
-    // Selection is by seq, so the bulk actions still cover the whole session.
-    assert.ok(bundle.includes('new Set((messages ?? []).map((row) => row.seq))'))
+    // Selection is by row id, so the bulk actions still cover the whole session.
+    assert.ok(bundle.includes('new Set((messages ?? []).map((row) => row.id))'))
   })
 
   it('holds the reader place when earlier rows are inserted above', () => {
     // Growing the window must not jump to the bottom, or the position the reader
     // scrolled to in order to click the button is thrown away.
     assert.ok(bundle.includes('anchoredRef'), 'the anchor is gone')
-    assert.ok(bundle.includes('data-seq'), 'rows are not addressable')
+    assert.ok(bundle.includes('data-id'), 'rows are not addressable')
     // The anchor is consumed, so a later fetch still scrolls to the newest rows.
     assert.ok(bundle.includes('anchoredRef.current = null'))
     assert.ok(bundle.includes('setPageSize(LIST_PAGE_SIZE)'), 'a new fetch must start at page one')
+  })
+
+  it('ticks a row from the row itself, not through a label', () => {
+    // The row used to be a <label> wrapping a native checkbox, so one click had
+    // to be forwarded to the input by the browser and depended on that
+    // forwarding landing exactly once. Rows that shared an event's `seq` shared
+    // the resulting state, and re-renders keyed by a duplicate seq remounted
+    // rows under the pointer. The row is now the control: one element, one
+    // click handler, one identity per row.
+    assert.ok(bundle.includes("role: 'checkbox'"), 'the row is not the control')
+    assert.ok(bundle.includes("'aria-checked'"))
+    assert.ok(bundle.includes("key: row.id"), 'rows are keyed by seq, which repeats')
+    assert.ok(bundle.includes("'data-id': row.id"))
+    assert.ok(bundle.includes('onClick: () => toggle(row.id)'))
+    assert.equal(bundle.includes("type: 'checkbox', checked"), false, 'a native input is back')
+  })
+
+  it('paints the last-count dropdown for the theme it sits in', () => {
+    // The shell paints a dark app without declaring `color-scheme`, so the
+    // native popup was drawn light while the option text inherited the app's
+    // near-white ink: the list looked blank until a row was hovered.
+    assert.ok(bundle.includes('colorScheme: scheme'), 'the popup is not themed')
+    assert.ok(bundle.includes('controlScheme'), 'nothing measures the surface')
   })
 })
 
