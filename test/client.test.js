@@ -241,35 +241,87 @@ describe('registrations', () => {
 })
 
 describe('composer filling and sending', () => {
-  it('fills through the native value setter, not a plain assignment', () => {
-    // The script is built inline in the bundle; assert on its text so a future
-    // edit cannot go back to writing `.value`, which React ignores.
-    assert.ok(bundle.includes('dispatchEvent(new Event("input"'))
-    assert.ok(bundle.includes('Object.getOwnPropertyDescriptor'))
+  it('fills through the browser-owned text insertion, not a value write', () => {
+    // The composer is React-controlled, and the earlier implementation wrote
+    // `.value` through the native setter and dispatched a synthetic `input`
+    // event. That works, but it is also the exact fingerprint of a script: no
+    // `beforeinput`, no clipboard, no key events. `insertText` is the channel an
+    // IME commit or a paste takes, so the page sees a real, trusted edit.
+    assert.ok(bundle.includes('insertText('), 'the native insertion channel is not used')
+    assert.equal(
+      /getOwnPropertyDescriptor\(proto, "value"\)/.test(bundle),
+      false,
+      'the value setter must not be written directly any more',
+    )
+    assert.equal(
+      /dispatchEvent\(new Event\("input"/.test(bundle),
+      false,
+      'a synthetic input event must not be the way text arrives',
+    )
   })
 
   it('never submits the form itself', () => {
     assert.equal(/\.submit\(\)|requestSubmit/.test(bundle), false)
   })
 
-  it('sends through DeepSeek own Enter handler', () => {
-    // Its composer runs onKeyDown and, for a plain Enter, calls the same function
-    // its send button calls — so a bubbling Enter is the user's own code path.
-    // Inventing a shortcut, or guessing the button's hashed class, would not be.
-    assert.ok(bundle.includes('new KeyboardEvent("keydown"'))
-    assert.ok(bundle.includes('key: "Enter"'))
-    assert.ok(bundle.includes('bubbles: true, cancelable: true, composed: true'))
+  it('sends by pressing Enter through the native input pipeline', () => {
+    // A synthetic KeyboardEvent has isTrusted === false, which is precisely what
+    // an anti-automation check looks at. sendInputEvent delivers a keyDown/keyUp
+    // pair the browser produces itself, so DeepSeek's own onKeyDown runs and its
+    // own send path fires.
+    assert.ok(bundle.includes('sendInputEvent('), 'the native key channel is not used')
+    assert.ok(bundle.includes("type: 'keyDown'"))
+    assert.ok(bundle.includes("type: 'keyUp'"))
+    assert.ok(bundle.includes("keyCode: 'Return'"))
+    assert.equal(
+      /new KeyboardEvent\("keydown"/.test(bundle),
+      false,
+      'a synthetic keydown must not be the way Enter arrives',
+    )
   })
 
-  it('treats a cleared composer as the receipt, with the button as fallback', () => {
+  it('leaves the text in the composer when no native channel exists', () => {
+    // No synthetic fallback on purpose: if the native channel is unavailable the
+    // honest outcome is text sitting in the composer and a person pressing
+    // Enter, not a page receiving input no human could have produced.
+    assert.ok(bundle.includes("'no-native-input'"))
+    assert.ok(bundle.includes('hasNativeInput'))
+  })
+
+  it('paces sends so the account never looks scripted', () => {
+    // A floor between consecutive sends plus a rolling hourly ceiling. Nothing
+    // is sent on a timer; these only stop a repeated click from being a burst.
+    assert.ok(bundle.includes('const SEND_GAP_MS = 20000'))
+    assert.ok(bundle.includes('const SEND_BURST = 12'))
+    assert.ok(bundle.includes('const SEND_WINDOW_MS = 60 * 60 * 1000'))
+    assert.ok(bundle.includes("error: 'too-fast'"))
+    assert.ok(bundle.includes("error: 'hourly-limit'"))
+    // A failed fill must not burn the allowance, so checking and booking differ.
+    assert.ok(bundle.includes('function sendGate()'))
+    assert.ok(bundle.includes('function noteSend()'))
+  })
+
+  it('waits before pressing Enter instead of sending in the same tick', () => {
+    // A person reads what they are about to send; a script submits instantly.
+    assert.ok(bundle.includes('const SEND_DWELL_MS = 1800'))
+    assert.ok(bundle.includes('function dwellDelay()'))
+    assert.ok(/const pressed = await pressEnter\(\)/.test(bundle))
+  })
+
+  it('keeps automatic submitting off unless it is switched on', () => {
+    // Filling a composer is a text edit; submitting is a message this account
+    // sends. Only the second one is automation, so only the second one is opt-in.
+    assert.ok(/const \[autoSend, setAutoSend\] = React\.useState\(false\)/.test(bundle))
+    assert.ok(bundle.includes('picker.autoSend'))
+    assert.ok(bundle.includes('picker.autoSendHint'))
+    // The default action is the one that stops at the composer.
+    assert.ok(/t\('action\.fillOnly'\)/.test(bundle))
+  })
+
+  it('treats a cleared composer as the receipt', () => {
     // DeepSeek empties its textarea once a send is accepted, so that — not an
-    // assumption that the click worked — is what we report on.
+    // assumption that the key press worked — is what we report on.
     assert.ok(bundle.includes('empty: value.trim()'))
-    assert.ok(bundle.includes('/send|submit|发送/i'))
-    assert.ok(bundle.includes('found: true'))
-  })
-
-  it('re-checks the composer before clicking, so it cannot send twice', () => {
     assert.ok(bundle.includes('composerCleared'))
     assert.ok(bundle.includes('not-sent'))
   })

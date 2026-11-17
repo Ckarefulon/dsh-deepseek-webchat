@@ -17,6 +17,7 @@ import {
   deepseekConversationUrl,
   deepseekSessionIdOf,
   deleteBinding,
+  describeToolCall,
   extractMessages,
   findOwner,
   formatQuestions,
@@ -114,6 +115,22 @@ describe('message extraction', () => {
     )
   })
 
+  it('describes a tool call instead of emitting call syntax', () => {
+    // The quoted text is pasted into another assistant's composer. A bare
+    // `bash({"cmd":"ls"})` reads to a model as a function call it is being asked
+    // to continue — it invites tool-call syntax back out of the other side, which
+    // is the one thing a background quote must not do.
+    assert.equal(
+      describeToolCall('bash', '{"cmd":"ls"}'),
+      '当时调用了工具「bash」，参数：{"cmd":"ls"}',
+    )
+    assert.equal(describeToolCall('bash', '{}'), '当时调用了工具「bash」，没有参数。')
+    assert.equal(describeToolCall('', ''), '当时调用了工具「未命名工具 / unnamed tool」，没有参数。')
+    // It must not be shaped like an invocation: no parenthesis right after the
+    // name, which is what every tool-call protocol looks like.
+    assert.equal(/^\w+\(/.test(describeToolCall('bash', '{"cmd":"ls"}')), false)
+  })
+
   it('accepts only human turns', () => {
     assert.equal(isHumanUserMessage({ data: { source: { kind: 'user' } } }), true)
     assert.equal(isHumanUserMessage({ data: { source: { kind: 'agent-instructions' } } }), false)
@@ -196,7 +213,11 @@ describe('message extraction', () => {
     assert.deepEqual(rows.map((row) => [row.kind, row.text]), [
       ['assistant', 'Sure.'],
       ['reasoning', 'they want X'],
-      ['tool-call', 'bash({"cmd":"ls"})'],
+      // A tool call is described as something that already happened rather than
+      // as `bash({"cmd":"ls"})`: a bare call reads to another model as a
+      // function call it is being asked to continue, which is the opposite of
+      // what a background quote should look like.
+      ['tool-call', '当时调用了工具「bash」，参数：{"cmd":"ls"}'],
       ['tool-result', 'file1\nfile2'],
       ['tool-result', '⚠ {"name":"E","code":"boom"}'],
       ['todo', '[x] write code\n[~] test\n[ ] ship'],

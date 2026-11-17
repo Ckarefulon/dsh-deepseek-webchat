@@ -343,6 +343,27 @@ export function formatQuestions(questions) {
   return lines.join('\n')
 }
 
+/**
+ * Describe one tool call as prose rather than as a protocol-shaped call.
+ *
+ * The quoted text is going to be pasted into another assistant's composer, and
+ * a bare `bash({"cmd":"ls"})` reads to a model as *a function call it is being
+ * asked to continue* — it invites the other side to answer with tool-call syntax
+ * of its own, which is exactly what "do not act like an agent" is trying to
+ * avoid. So the same information is written as a sentence about something that
+ * already happened: a record, in the past tense, with the tool name in quotes
+ * and the arguments kept as data.
+ * @param name - the tool's name, as the log recorded it.
+ * @param argumentsText - its raw JSON arguments.
+ * @returns one line of readable text.
+ */
+export function describeToolCall(name, argumentsText) {
+  const tool = String(name ?? '').trim() === '' ? '未命名工具 / unnamed tool' : String(name).trim()
+  const args = clip(argumentsText, 800)
+  if (args === '' || args === '{}') return '当时调用了工具「' + tool + '」，没有参数。'
+  return '当时调用了工具「' + tool + '」，参数：' + args
+}
+
 /** Truncate long single-line payloads so a picker row stays readable. */
 function clip(text, limit = 2000) {
   const value = String(text ?? '').trim()
@@ -453,7 +474,7 @@ export function extractMessages(events, options = {}) {
         seq: event.seq,
         role: 'assistant',
         kind: KINDS.toolCall,
-        text: call.name + '(' + clip(call.arguments, 800) + ')',
+        text: describeToolCall(call.name, call.arguments),
       })
     }
   }
@@ -494,7 +515,7 @@ export function extractMessages(events, options = {}) {
       if (advanced) {
         rows.push({
           seq: event.seq, role: 'assistant', kind: KINDS.toolCall,
-          text: String(event.data?.name ?? 'tool') + '(' + clip(event.data?.arguments, 800) + ')',
+          text: describeToolCall(event.data?.name ?? 'tool', event.data?.arguments),
         })
       }
       continue
