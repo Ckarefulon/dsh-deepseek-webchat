@@ -31,9 +31,10 @@ browser uses.
 | **Questions included** | The agent's questions to you, their options, and your answers are quotable too. |
 | **Todo list included** | The agent's todo list is quotable without turning anything on. |
 | **One click to fill** | 「仅填入」 puts the preview in the DeepSeek composer through real input events; you press Enter. |
-| **Opt-in send** | 「填入后自动发送」 (off by default) presses Enter for you, paced to 20 s / 12 per hour. |
-| **Bulk selection** | Select all, clear, or take the last 5/10/20/50 rows in one click. |
-| **Advanced opt-in** | A switch reveals thinking, tool calls and results — off by default. |
+| **Two buttons, no mode** | 「仅填入」 and 「填入并发送」 sit side by side; which one you press *is* the choice, paced to 20 s / 12 per hour. |
+| **Bulk selection** | Select all, clear, take the last N in one click, and shift-click for a range — ctrl+shift for a second one. |
+| **Two views** | 「消息」 quotes row by row; 「轮次」 groups the session into turns and picks each one apart by kind. |
+| **Advanced opt-in** | Thinking, tool calls and results stay out of the list — and out of the request — until you ask for them. |
 | **Explained context** | An optional note tells DeepSeek what the quotes are and where they came from. |
 | **No back-flow** | DeepSeek's answers are never written back into your DSH conversation. |
 
@@ -114,18 +115,31 @@ That backup is your configuration, not the plugin, so keep it.
    lazily, so this is the moment its id exists — the plugin notices and binds it
    to the current DSH Session. The toolbar dot turns green.
 4. **Quote context.** Press 「引用上下文」. The list opens scrolled to the newest
-   rows. Tick what you want — or use 「全选」, 「清除」, or the number box plus
-   「选末尾」 to take the last few in one go — optionally type a question or
-   instruction, and check the preview. The list holds your turns, the assistant's
-   replies, **the agent's todo list**, **the questions it asked you** (with the
-   options it offered), and **your answers** to them.
+   rows. The panel has two views, and a segmented switch in the top strip
+   decides which one the list shows:
+
+   - **「消息」** is the row-by-row view. Click a row to tick it, **Shift+click**
+     for everything between it and the row you last clicked, **Ctrl+Shift+click**
+     to add a second range without losing the first. 「全选」, 「清除」,
+     「重新读取」, 「附上说明」 and 「选末尾 N」 are on the strip under the top one,
+     shared with the other view.
+   - **「轮次」** groups the session into turns — one per human message — and each
+     turn carries four checkboxes: **用户输入**, **最终输出**, **过程对话** and
+     **详细内容**. The turn header folds out the rows it holds, where they can
+     still be ticked one at a time; a hand-ticked turn reports those boxes as
+     half-filled rather than lying about them.
+
+   Both views tick the **same** selection, so switching views never changes what
+   is about to be sent. The list holds your turns, the assistant's replies,
+   **the agent's todo list**, **the questions it asked you** (with the options it
+   offered), and **your answers** to them.
 5. **Press 「仅填入」.** The text lands in DeepSeek's composer through the
    browser's own input channel, the panel returns to the page, and the selection
    clears. Read it there and press Enter yourself — that is the normal path, and
    the one this plugin is built around.
-   If you would rather it submitted for you, tick 「填入后自动发送」 first; the
-   plugin then presses Enter after a short pause, no more than once every 20
-   seconds and twelve times an hour.
+   「填入并发送」 sits next to it: it presses Enter after a short pause, no more
+   than once every 20 seconds and twelve times an hour. It is a button, not a
+   switch, so an automatic send is never one you forgot you enabled.
 6. **The plugin checks its work.** After an automatic send it reads the composer
    back to confirm the message went out, and says so — or tells you plainly that
    it did not, so you can press Enter there yourself.
@@ -136,17 +150,39 @@ Session's conversation, so the next visit starts a new one).
 Switching to a different DSH Session moves the panel to *that* Session's
 conversation automatically.
 
+### Choosing how much of each turn to quote
+
+The four turn kinds are:
+
+| | What it is |
+|---|---|
+| **用户输入** | What you typed, plus the option you picked when the assistant asked a question. |
+| **最终输出** | The turn's **last** assistant reply. Empty while the turn is still running. |
+| **过程对话** | The turn's *other* assistant replies, plus the questions asked and the todo list. |
+| **详细内容** | Thinking, tool calls and results, commands, compaction summaries — by far the largest. |
+
+「默认选择」 on the view strip sets which kinds every turn contributes, starting
+at **标准** (the first three). It is remembered between launches, and it is the
+*only* source of truth: a turn you have not touched reads it directly, so changing
+it moves every one of those turns at once. A turn you ticked by hand keeps its own
+choice and is left alone — which is why there is no 「应用到全部」 button to press.
+
+Two presets worth knowing: **最小** (your input and the final output, the least
+text that still reads as a conversation) and **全量** (everything, including the
+machinery). 详细内容 is the one that costs megabytes, so it is also the one the
+plugin does not fetch until a turn actually asks for it.
+
 ### What gets sent, and how
 
 Every push is still something you asked for: nothing is sent on a timer, nothing
 is uploaded in the background, and nothing is sent merely because the panel is
 open.
 
-**Filling is the default; sending is opt-in.** 「仅填入」 puts the text in
+**Filling is the default; sending is a second button.** 「仅填入」 puts the text in
 DeepSeek's composer and stops there, so you read it and press Enter yourself.
-Automatic submitting only exists behind **「填入后自动发送」**, which is off on
-every launch — filling a composer is a text edit, while submitting is a message
-your account sends, and only the second one is automation.
+Automatic submitting exists only on 「填入并发送」, which is a thing you click rather
+than a mode the panel sits in — filling a composer is a text edit, while
+submitting is a message your account sends, and only the second one is automation.
 
 #### Why the input goes through real events
 
@@ -221,12 +257,17 @@ quotes — but then say what they are yourself.
 ### The advanced switch
 
 By default the picker lists the conversation as a person reads it, plus the
-agent's todo list. Tick **「高级：包含思考过程与工具调用」** to also list the
-machinery behind it: the model's reasoning blocks, its tool calls, the tool
-results, slash commands, and compaction summaries — including tool output that
-may contain file contents. It is off on every open, and the host does the
+agent's todo list. Tick **「高级：包含思考过程与工具调用」** in the message view to
+also list the machinery behind it: the model's reasoning blocks, its tool calls,
+the tool results, slash commands, and compaction summaries — including tool output
+that may contain file contents. It is off on every open, and the host does the
 filtering, so an advanced row is never even sent to the browser unless you asked
 for it.
+
+In the turn view the same rows are reached through a turn's **详细内容** box
+instead, and the request follows that choice: the plugin asks the host for the
+advanced row set only while some turn contributes detail, so a session where
+nobody asked for it never pays for it over the wire.
 
 Each row is marked with an icon from the shell's own icon set plus a short
 label, so a quoted answer and a quoted tool result stay distinguishable in the
@@ -248,7 +289,7 @@ button**, and so that the things you would least want to leak are never even
 offered.
 
 **What is sent, and when.** Only the rows you tick, and only when you click
-「仅填入」 or 「填入后自动发送」. Both are explicit actions; the plugin has no
+「仅填入」 or 「填入并发送」. Both are explicit actions; the plugin has no
 timer and no background upload.
 
 **What does not leave in a form DeepSeek could mistake for instructions.** Tool

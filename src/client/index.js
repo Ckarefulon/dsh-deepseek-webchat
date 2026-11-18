@@ -172,9 +172,35 @@ window.__ModuleLoader__.load({
 			'action.all': '全选',
 			'action.none': '清除',
 			'action.last': '选末尾',
+			'action.lastWithCount': '选末尾 {count}',
 			'action.fill': '填入并发送',
 			'action.fillOnly': '仅填入',
 			'action.copy': '复制',
+			'view.messages': '消息',
+			'view.messagesHint': '按条引用：单击勾选，Shift+单击选区间，Ctrl+Shift+单击把另一段区间加进来。',
+			'view.turns': '轮次',
+			'view.turnsHint': '按轮引用：每一轮单独选择要引用哪几类内容。',
+			'picker.refreshHint': '重新读取这个会话（不会丢掉已选内容之外的其他设置）',
+			'picker.turnDefault': '默认选择',
+			'picker.turnDefaultHint': '每一轮默认引用哪几类内容；改过的那一轮不受影响。',
+			'picker.turnDefaultNote': '改动只影响没单独改过的轮次，改过的那一轮保持不变。',
+			'picker.preset.minimal': '最小',
+			'picker.preset.standard': '标准',
+			'picker.preset.full': '全量',
+			'picker.preset.custom': '自定义',
+			'picker.field.input': '用户输入',
+			'picker.field.inputHint': '你输入的内容，以及你回答助手提的问题时选的那一项。',
+			'picker.field.final': '最终输出',
+			'picker.field.finalHint': '这一轮助手最后一段回复。这一轮还没结束时为空。',
+			'picker.field.process': '过程对话',
+			'picker.field.processHint': '这一轮里除最后一段以外的助手回复，以及助手向你提的问题和待办清单。',
+			'picker.field.detail': '详细内容',
+			'picker.field.detailHint': '思考过程、工具调用与结果、命令、压缩摘要 —— 体积最大，默认不含。',
+			'picker.turnNo': '#{n}',
+			'picker.turnMeta': '{rows} 条 · 已选 {selected}',
+			'picker.turnsTruncated': '轮次太多，只列出最近 {count} 轮之后的部分',
+			'picker.emptyTurns': '这个会话还没有形成一轮对话。',
+			'picker.previewSize': '（{count} 字）',
 			'picker.title': '选择要引用的消息',
 			'picker.empty': '这个会话还没有可引用的消息。',
 			'picker.emptyAdvanced': '这个会话还没有可引用的内容。',
@@ -236,9 +262,35 @@ window.__ModuleLoader__.load({
 			'action.all': 'Select all',
 			'action.none': 'Clear',
 			'action.last': 'Last',
+			'action.lastWithCount': 'Last {count}',
 			'action.fill': 'Fill and send',
 			'action.fillOnly': 'Fill only',
 			'action.copy': 'Copy',
+			'view.messages': 'Messages',
+			'view.messagesHint': 'Quote row by row: click to tick, Shift+click for a range, Ctrl+Shift+click to add a second range.',
+			'view.turns': 'Turns',
+			'view.turnsHint': 'Quote turn by turn: choose which kinds of content each turn contributes.',
+			'picker.refreshHint': 'Read this session again',
+			'picker.turnDefault': 'Default',
+			'picker.turnDefaultHint': 'Which kinds a turn contributes by default; turns you edited keep their own choice.',
+			'picker.turnDefaultNote': 'Changing this moves every turn you have not edited, and leaves the edited ones alone.',
+			'picker.preset.minimal': 'Minimal',
+			'picker.preset.standard': 'Standard',
+			'picker.preset.full': 'Everything',
+			'picker.preset.custom': 'Custom',
+			'picker.field.input': 'Your input',
+			'picker.field.inputHint': 'What you typed, plus the option you picked when the assistant asked.',
+			'picker.field.final': 'Final output',
+			'picker.field.finalHint': 'The last reply of the turn. Empty while the turn is still running.',
+			'picker.field.process': 'Working dialogue',
+			'picker.field.processHint': 'The earlier assistant replies of this turn, plus the questions asked and the todo list.',
+			'picker.field.detail': 'Detail',
+			'picker.field.detailHint': 'Thinking, tool calls and results, commands, compaction summaries — by far the largest, off by default.',
+			'picker.turnNo': '#{n}',
+			'picker.turnMeta': '{rows} rows · {selected} selected',
+			'picker.turnsTruncated': 'Too many turns: only the most recent ones are listed, {count} older turns are not',
+			'picker.emptyTurns': 'This session has no complete turn yet.',
+			'picker.previewSize': ' ({count} chars)',
 			'picker.title': 'Choose messages to quote',
 			'picker.empty': 'This session has no quotable messages yet.',
 			'picker.emptyAdvanced': 'This session has nothing quotable yet.',
@@ -635,7 +687,6 @@ window.__ModuleLoader__.load({
 				'.dswc-primary:hover:not(:disabled){background:var(--dsw-alias-state-business-primary,#4d6bfe);opacity:.88}',
 				'.dswc-host{position:relative;flex:1 1 auto;min-height:0}',
 				'.dswc-picker{display:flex;flex-direction:column;flex:1 1 auto;min-height:0;gap:6px;padding:8px}',
-				'.dswc-pickerHead{display:flex;align-items:center;gap:6px;row-gap:4px;flex-wrap:wrap;flex:none}',
 				'.dswc-pickerTitle{font-weight:600}',
 				'.dswc-muted{color:var(--dsw-alias-label-tertiary,#adb2b8);font-size:11px}',
 				'.dswc-more{position:sticky;top:0;display:flex;align-items:center;gap:8px;padding:6px 8px;background:var(--dsw-alias-bg-layer-1,#fff);border-bottom:1px solid var(--dsw-alias-border-l4,rgba(128,128,128,.25))}',
@@ -668,7 +719,6 @@ window.__ModuleLoader__.load({
 				// which is a solid mark and reads as a grey blob when muted.
 				'.dswc-row[data-kind="question"] .dswc-role,.dswc-row[data-kind="answer"] .dswc-role{color:var(--dsw-alias-state-business-primary,#4d6bfe)}',
 				'.dswc-row[data-kind="assistant"] .dswc-role{color:var(--dsw-alias-state-business-primary,#4d6bfe)}',
-				'.dswc-select{font:inherit;font-size:11px;padding:2px 4px;border-radius:var(--dsw-radius-sm,8px);border:1px solid var(--dsw-alias-border-l4,rgba(128,128,128,.35));background:transparent;color:inherit}',
 				// Advanced rows are the machinery behind the conversation, so they
 				// are inked down rather than competing with the actual dialogue.
 				'.dswc-row[data-kind="reasoning"] .dswc-text,.dswc-row[data-kind="tool-call"] .dswc-text,.dswc-row[data-kind="tool-result"] .dswc-text,.dswc-row[data-kind="todo"] .dswc-text,.dswc-row[data-kind="command"] .dswc-text,.dswc-row[data-kind="summary"] .dswc-text{color:var(--dsw-alias-label-tertiary,#adb2b8);font-size:11px}',
@@ -693,6 +743,54 @@ window.__ModuleLoader__.load({
 				'.dswc-headerButton{box-sizing:border-box;display:inline-flex;flex:none;align-items:center;justify-content:center;width:24px;height:24px;padding:0;border:0;border-radius:var(--dsw-radius-sm,8px);background:transparent;color:var(--dsw-alias-label-secondary,#cfd3d6);cursor:pointer}',
 				'.dswc-headerButton:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(255,255,255,.08));color:var(--dsw-alias-label-primary,#fff)}',
 				'.dswc-headerButton:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary,#4d6bfe);outline-offset:1px}',
+				// The view strip. 30px, one hairline under it, and it never scrolls:
+				// it belongs to whichever view is selected and changes with it.
+				'.dswc-viewBar{box-sizing:border-box;display:flex;align-items:center;gap:6px;row-gap:4px;flex-wrap:wrap;flex:none;padding:4px 0;padding-bottom:6px;border-bottom:.5px solid var(--dsw-alias-border-l3,rgba(128,128,128,.24))}',
+				// The view switch in the 38px strip, drawn as a segmented control so
+				// which view is showing is the position of a filled block rather than
+				// the wording of a button.
+				'.dswc-segmented{display:inline-flex;flex:none;border:1px solid var(--dsw-alias-border-l4,rgba(128,128,128,.35));border-radius:var(--dsw-radius-sm,8px);overflow:hidden}',
+				'.dswc-segment{font:inherit;font-size:11px;padding:2px 8px;border:0;background:transparent;color:var(--dsw-alias-label-tertiary,#adb2b8);cursor:pointer}',
+				'.dswc-segment[aria-selected="true"]{background:var(--dsw-alias-state-business-primary,#4d6bfe);color:#fff}',
+				'.dswc-segment:not([aria-selected="true"]):hover{background:var(--dsw-alias-interactive-bg-hover,rgba(128,128,128,.12));color:inherit}',
+				'.dswc-segmentActive{border-color:transparent;background:var(--dsw-alias-state-business-primary,#4d6bfe);color:#fff}',
+				// A popup owned by a toolbar button. `position: relative` on the
+				// wrapper and `absolute` here, so the menu sits under its own button
+				// instead of under the panel.
+				'.dswc-lastWrap{position:relative;flex:none;display:inline-flex}',
+				'.dswc-menu{position:absolute;top:calc(100% + 4px);right:0;z-index:20;display:flex;flex-direction:column;gap:4px;min-width:132px;padding:6px;border-radius:var(--dsw-radius-md,12px);border:.5px solid var(--dsw-alias-border-l3,rgba(128,128,128,.3));background:var(--dsw-alias-bg-layer-1,#1c1d21);box-shadow:0 8px 24px rgba(0,0,0,.28)}',
+				'.dswc-menuInline{flex-direction:row;gap:4px;min-width:0}',
+				'.dswc-menuTitle{font-size:11px;color:var(--dsw-alias-label-tertiary,#adb2b8);padding:0 2px 2px}',
+				'.dswc-menuPresets{display:flex;gap:4px;padding-top:2px}',
+				'.dswc-field{display:flex;align-items:center;gap:6px;padding:2px;cursor:pointer;border-radius:var(--dsw-radius-sm,8px)}',
+				'.dswc-field[data-state="empty"]{opacity:.45;cursor:default}',
+				'.dswc-field:hover:not([data-state="empty"]){background:var(--dsw-alias-interactive-bg-hover,rgba(128,128,128,.12))}',
+				// A mixed box draws a dash instead of a tick. It exists because a
+				// turn whose rows were ticked one at a time is neither all in nor
+				// all out, and showing it as "off" would then untick it as a whole.
+				'.dswc-field[data-state="on"] .dswc-box{border-color:var(--dsw-alias-state-business-primary,#4d6bfe);background:var(--dsw-alias-state-business-primary,#4d6bfe)}',
+				'.dswc-field[data-state="on"] .dswc-box::after{content:"";position:absolute;left:3.5px;top:.5px;width:4px;height:8px;border:solid #fff;border-width:0 1.5px 1.5px 0;transform:rotate(45deg)}',
+				'.dswc-field[data-state="mixed"] .dswc-box{border-color:var(--dsw-alias-state-business-primary,#4d6bfe)}',
+				'.dswc-field[data-state="mixed"] .dswc-box::after{content:"";position:absolute;left:3px;top:5px;width:5px;height:1.5px;background:var(--dsw-alias-state-business-primary,#4d6bfe)}',
+				// The real checkbox is present for the keyboard and for assistive
+				// technology; the label's drawn box is what the eye sees.
+				'.dswc-srOnly{position:absolute;width:1px;height:1px;margin:-1px;padding:0;border:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}',
+				'.dswc-field:focus-within,.dswc-turnHead:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary,#4d6bfe);outline-offset:-2px}',
+				// A turn: a header that folds, then one line of four checkboxes, and
+				// the rows only when it is open.
+				'.dswc-turn{border-bottom:.5px solid var(--dsw-alias-border-l4,rgba(128,128,128,.15))}',
+				'.dswc-turn:last-child{border-bottom:0}',
+				'.dswc-turnHead{display:flex;align-items:center;gap:6px;padding:6px 8px 2px;cursor:pointer;user-select:none;-webkit-user-select:none;outline:none}',
+				'.dswc-caret{flex:none;width:10px;font-size:10px;color:var(--dsw-alias-label-tertiary,#adb2b8)}',
+				'.dswc-turnNo{flex:none;font-size:10px;color:var(--dsw-alias-label-tertiary,#adb2b8);font-variant-numeric:tabular-nums}',
+				'.dswc-turnTitle{flex:1 1 auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+				'.dswc-turnFields{display:flex;flex-wrap:wrap;gap:2px 10px;padding:0 8px 6px 24px;font-size:11px;color:var(--dsw-alias-label-tertiary,#adb2b8)}',
+				'.dswc-turnRows{border-top:.5px dashed var(--dsw-alias-border-l4,rgba(128,128,128,.2));margin:0 0 4px 18px}',
+				// The folded preview: one line, and the size of what is behind it.
+				'.dswc-previewHead{display:flex;align-items:center;gap:4px}',
+				'.dswc-link{font:inherit;font-size:11px;padding:0;border:0;background:transparent;color:var(--dsw-alias-label-tertiary,#adb2b8);cursor:pointer;text-align:left}',
+				'.dswc-link:hover{color:inherit}',
+				'.dswc-link:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary,#4d6bfe);outline-offset:2px}',
 			].join('\n')
 			document.head.appendChild(tag)
 		}
@@ -1792,41 +1890,243 @@ window.__ModuleLoader__.load({
 			return ChatBubbleGlyph(props)
 		}
 
+		//#region selection model
+
 		/**
-		 * Which way the browser should paint a native control's own surfaces.
+		 * How a plain click on a row behaves, and what the shift/ctrl keys did to
+		 * the one before it.
 		 *
-		 * The shell paints a dark app without declaring `color-scheme`, so the
-		 * popup of a native `<select>` is drawn light (browser default) while
-		 * its option text inherits the app's near-white ink: the list reads as
-		 * blank, and a row only becomes legible while the pointer is over it and
-		 * the hover highlight paints something behind the text. `color-scheme`
-		 * is exactly the hint that makes the popup and the ink agree, and the
-		 * surface the control actually sits on is the honest source for it —
-		 * no guessing at the shell's theme attribute.
+		 * This is the classic desktop model rather than anything bespoke: `anchor`
+		 * is the last row clicked with no modifier, `focus` is the last row clicked
+		 * with one, and `base` is what the selection was before the current run of
+		 * modified clicks started.
 		 *
-		 * @param element - any node inside the pane.
-		 * @returns `'dark'` or `'light'`.
+		 * `base` is the part that makes a range reusable. Without it, every
+		 * Shift-click would have to either paint the range onto the live selection
+		 * (which cannot shrink: a second Shift-click nearer the anchor leaves the
+		 * first range behind) or replace it (which throws away ticking one row at a
+		 * time). Keeping the pre-run selection means Shift-click *redraws* the
+		 * range instead of accumulating it, so overshooting a range is fixed by
+		 * clicking nearer the anchor, and Ctrl+Shift adds a second range to the
+		 * selection that was there before the first one.
+		 *
+		 * @param anchor - row id the range is measured from, or null.
+		 * @param focus - the last row a modified click landed on, or null.
+		 * @param base - the selection the current modified run started from.
+		 * @param additive - whether the current run adds to `base` (Shift+Ctrl) or
+		 *   replaces it (Shift alone).
+		 * @returns the initial state.
 		 */
-		function controlScheme(element) {
-			const osDark = typeof matchMedia === 'function'
-				&& matchMedia('(prefers-color-scheme: dark)').matches
-			const fallback = osDark ? 'dark' : 'light'
-			let node = element
-			while (node !== null && node !== undefined && typeof node !== 'string') {
-				const match = /rgba?\(([^)]+)\)/.exec(String(window.getComputedStyle(node).backgroundColor))
-				if (match !== null) {
-					const [r, g, b, a = 1] = match[1].split(',').map((part) => Number.parseFloat(part))
-					if ([r, g, b, a].every((part) => Number.isFinite(part)) && a > 0.4) {
-						// Perceived luminance. The exact weights do not matter; only
-						// which side of half the surface falls on does.
-						const luma = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255
-						return luma > 0.5 ? 'light' : 'dark'
+		function emptySelection() {
+			return { anchor: null, focus: null, base: new Set(), additive: false }
+		}
+
+		/**
+		 * The range between two row indices, inclusive, in either direction.
+		 * @param a - one end's index.
+		 * @param b - the other end's index.
+		 * @returns `[low, high]`, or null when either end is not a number.
+		 */
+		function spanOf(a, b) {
+			if (!Number.isInteger(a) || !Number.isInteger(b)) return null
+			return a <= b ? [a, b] : [b, a]
+		}
+
+		/** The same span, of row ids rather than indices. */
+		function spanIds(rows, span) {
+			const ids = []
+			for (let index = span[0]; index <= span[1]; index += 1) ids.push(rows[index].id)
+			return ids
+		}
+
+		/**
+		 * Which of the four turn kinds that turn view offers each row kind falls
+		 * into.
+		 *
+		 * `detail` are the rows the old 「高级」 switch used to reveal, so turning
+		 * it on for every turn is the same amount of text as switching advanced on
+		 * — which is why it is off in both presets.
+		 */
+		const TURN_FIELD = {
+			user: 'input',
+			answer: 'input',
+			command: 'detail',
+			assistant: 'process',
+			question: 'process',
+			todo: 'process',
+			reasoning: 'detail',
+			'tool-call': 'detail',
+			'tool-result': 'detail',
+			summary: 'detail',
+		}
+
+		/** The four checkboxes a turn row carries, in reading order. */
+		const TURN_FIELDS = ['input', 'final', 'process', 'detail']
+
+		/** Named starting points for "which of the four kinds a turn contributes". */
+		const TURN_PRESETS = {
+			minimal: ['input', 'final'],
+			standard: ['input', 'final', 'process'],
+			full: ['input', 'final', 'process', 'detail'],
+		}
+
+		/** How many turns the turn view builds at once; it keeps the newest. */
+		const TURN_PAGE_SIZE = 60
+
+		/** The preset a fresh install starts on. */
+		const TURN_PRESET_DEFAULT = 'standard'
+
+		/** Where the turn view's default choice is remembered. */
+		const TURN_PRESET_KEY = 'dsh-deepseek-webchat.turnPreset'
+
+		/** Remembered across launches; falls back to the default, never throws. */
+		function loadTurnPreset() {
+			const fallback = { preset: TURN_PRESET_DEFAULT, fields: TURN_PRESETS[TURN_PRESET_DEFAULT] }
+			try {
+				const stored = window.localStorage.getItem(TURN_PRESET_KEY)
+				if (stored === null) return fallback
+				const parsed = JSON.parse(stored)
+				// A named preset is resolved through the table, not stored as a
+				// frozen field list, so redefining what 「标准」 means reaches every
+				// turn still following it.
+				if (typeof parsed?.preset === 'string' && parsed.preset in TURN_PRESETS) {
+					return { preset: parsed.preset, fields: TURN_PRESETS[parsed.preset] }
+				}
+				if (Array.isArray(parsed?.fields)) {
+					return {
+						preset: 'custom',
+						fields: TURN_PRESETS.full.filter((field) => parsed.fields.includes(field)),
 					}
 				}
-				node = node.parentElement ?? null
+			} catch (error) {
+				// A blocked or corrupt store is not a reason to fail to render.
 			}
 			return fallback
 		}
+
+		/**
+		 * Persist one default choice. A named preset is stored by name so a later
+		 * change to what that preset means still reaches the turns following it;
+		 * a hand-picked set is stored as its field list.
+		 * @param preset - a key of {@link TURN_PRESETS}, or `'custom'`.
+		 * @param fields - the four-kind set, used when `preset` is `'custom'`.
+		 */
+		function saveTurnPreset(preset, fields) {
+			try {
+				window.localStorage.setItem(TURN_PRESET_KEY, JSON.stringify({
+					preset,
+					fields: preset === 'custom' ? fields : undefined,
+				}))
+			} catch (error) {
+				// Same: the choice still applies for this session.
+			}
+		}
+
+		/**
+		 * The default each turn reports, without any per-turn state to migrate.
+		 *
+		 * A turn the user has not touched has no entry in `overrides` and so reads
+		 * the default directly. That *is* "same as the old default becomes the new
+		 * default, anything different stays put": changing the default moves every
+		 * untouched turn at once and cannot reach an edited one, so there is
+		 * nothing to reconcile when it changes and no 「应用到全部」 to press.
+		 *
+		 * @param defaults - the current default four-kind set.
+		 * @param overrides - `Map` of turn key → the set that turn was given.
+		 * @param key - the turn's key.
+		 * @returns the four-kind set that turn should report.
+		 */
+		function fieldsFor(defaults, overrides, key) {
+			return overrides.get(key) ?? defaults
+		}
+
+		/**
+		 * The row ids a turn contributes for one of the four kinds.
+		 *
+		 * The final output is the turn's *last* assistant row, and it is the one
+		 * row whose kind decides nothing: it is `assistant`, which maps to
+		 * `process`, yet it belongs to `final`. Every *other* assistant row of the
+		 * turn is `process`, so the split is by position, not by kind — which is
+		 * why both the checkbox state and the ticking go through here rather than
+		 * each filtering by kind on its own.
+		 *
+		 * @param turn - one entry of {@link groupTurns}'s result.
+		 * @param field - one of `input`, `final`, `process`, `detail`.
+		 * @returns the row ids, in log order; empty when the turn has none
+		 *   (a turn still running has no final output yet).
+		 */
+		function fieldIds(turn, field) {
+			if (field === 'final') return turn.final === null ? [] : [turn.final.id]
+			const ids = []
+			for (const row of turn.rows) {
+				if (row === turn.final) continue
+				if (TURN_FIELD[row.kind] === field) ids.push(row.id)
+			}
+			return ids
+		}
+
+		/**
+		 * Whether two four-kind sets say the same thing.
+		 * @param a - one set.
+		 * @param b - the other.
+		 * @returns true when they hold the same fields.
+		 */
+		function sameFields(a, b) {
+			return a.length === b.length && a.every((field) => b.includes(field))
+		}
+
+		/**
+		 * The first line of a row's text, short enough for a turn header.
+		 * @param text - the row text.
+		 * @returns one line, clipped.
+		 */
+		function oneLine(text) {
+			const line = String(text ?? '').split(/\r?\n/).find((part) => part.trim() !== '') ?? ''
+			const trimmed = line.trim()
+			return trimmed.length > 60 ? trimmed.slice(0, 60) + '…' : trimmed
+		}
+
+		/**
+		 * Group rows into turns.
+		 *
+		 * A turn is everything from a human's turn to the next one. The rows
+		 * arrive in log order, so this is one pass: `turn` comes from the host
+		 * (see `extractMessages`), and rows logged before the first human turn
+		 * carry `0` and are not a turn of their own.
+		 *
+		 * The last assistant text of a turn is the turn's answer — that is what
+		 * 「最终输出」 quotes — and it is `null` while a turn is still running, which
+		 * the row shows as a disabled checkbox rather than as an empty selection.
+		 *
+		 * @param rows - rows from the messages route.
+		 * @returns the turns, newest first in `rows` order but oldest first in the
+		 *   returned array, which is the order the list renders.
+		 */
+		function groupTurns(rows) {
+			const turns = []
+			for (const row of rows) {
+				const number = typeof row.turn === 'number' ? row.turn : 0
+				if (number === 0) continue
+				let turn = turns.length === 0 ? null : turns[turns.length - 1]
+				if (turn === null || turn.turn !== number) {
+					turn = { id: row.id, turn: number, rows: [], title: '', final: null }
+					turns.push(turn)
+				}
+				turn.rows.push(row)
+				if (row.kind === 'user' && turn.title === '') turn.title = oneLine(row.text)
+			}
+			for (const turn of turns) {
+				for (let index = turn.rows.length - 1; index >= 0; index -= 1) {
+					if (turn.rows[index].kind === 'assistant') {
+						turn.final = turn.rows[index]
+						break
+					}
+				}
+			}
+			return turns
+		}
+
+		//#endregion
 
 		/**
 		 * The tab body: a toolbar, and either the picker or the measured guest area.
@@ -1852,24 +2152,37 @@ window.__ModuleLoader__.load({
 			const [dropped, setDropped] = React.useState(0)
 			const [loadError, setLoadError] = React.useState('')
 			const [selected, setSelected] = React.useState(() => new Set())
+			// The shift/ctrl range state. Kept in a ref rather than in state
+			// because every click has to read the value a previous click in the
+			// same gesture just wrote, and a state update lands a render later.
+			const selRef = React.useRef(emptySelection())
+			const [turns, setTurns] = React.useState([])
+			const [expanded, setExpanded] = React.useState(() => new Set())
+			const [view, setView] = React.useState('messages')
+			// Which of the four kinds a turn contributes, until a turn is edited.
+			const [defaultChoice, setDefaultChoice] = React.useState(loadTurnPreset)
+			// Per-turn edits only, keyed by the turn's row id. Anything absent
+			// reads the default, which is what makes a changed default reach every
+			// untouched turn and leave the edited ones alone.
+			const [overrides, setOverrides] = React.useState(() => new Map())
+			const [truncatedTurns, setTruncatedTurns] = React.useState(0)
+			const [lastOpen, setLastOpen] = React.useState(false)
+			const [presetOpen, setPresetOpen] = React.useState(false)
+			// The preview is a reference, not something read on every push, so it
+			// starts folded: it is the tallest block in the panel and the two
+			// buttons below it are what the reader is actually reaching for.
+			const [previewOpen, setPreviewOpen] = React.useState(false)
 			const [question, setQuestion] = React.useState('')
 			const [advanced, setAdvanced] = React.useState(false)
 			const [preamble, setPreamble] = React.useState(true)
-			// Off by default, and deliberately. Filling the composer is a text
-			// edit; submitting is a message this account sends, and the difference
-			// between the two is the difference between a convenience and an
-			// automation. The switch is remembered for the tab's lifetime only —
-			// every fresh page load goes back to "you press Enter".
-			const [autoSend, setAutoSend] = React.useState(false)
+			// Automatic sending is a property of the button pressed, not a mode the
+			// panel sits in: 「仅填入」 leaves the Enter key to the human, 「填入并发送」
+			// presses it. There is no switch to leave on by accident.
+
 			// Pacing is advisory state, so the buttons can say why they are off
 			// instead of only failing after a click.
 			const [gateNote, setGateNote] = React.useState('')
 			const [lastN, setLastN] = React.useState(10)
-			// What `color-scheme` the native 「选末尾条数」 dropdown has to declare
-			// so its popup is painted the way the app around it is. Measured when
-			// the picker opens, because that is when the popup can next appear.
-			const [scheme, setScheme] = React.useState('dark')
-			const headRef = React.useRef(null)
 			const [busy, setBusy] = React.useState(false)
 			const [toast, setToast] = React.useState('')
 			// Bumped only by the explicit 「重新读取」 button. It is separate from
@@ -2029,26 +2342,33 @@ window.__ModuleLoader__.load({
 				}
 			}, [pickerOpen, tabVisible])
 
+			// Which kinds the panel has to ask for.
+			//
+			// The row set is chosen by the host, so anything the current view could
+			// select has to be in it — and nothing else, because detail rows are the
+			// bulk of a long session (one measured at 8.9 MB of JSON). Turn view
+			// needs them as soon as any turn contributes detail, whether that came
+			// from the default or from a turn the user edited.
+			const wantsDetail = view === 'turns'
+				? defaultChoice.fields.includes('detail')
+					|| [...overrides.values()].some((fields) => fields.includes('detail'))
+				: false
+			const needAdvanced = view === 'messages' ? advanced : wantsDetail
+
 			// Hide the guest behind the picker.
 			React.useEffect(() => {
 				setOverlaySuppressed(pickerOpen)
 			}, [pickerOpen])
 
-			// Tell the native dropdown which way to paint its popup. Runs after
-			// the header row is in the document, which is the first moment the
-			// surface under it can be measured.
-			React.useEffect(() => {
-				if (!pickerOpen) return
-				setScheme(controlScheme(headRef.current))
-			}, [pickerOpen])
-
-			// Read the session's messages when the picker opens, when the advanced
-			// switch flips, when the Session changes, and when the user asks for a
-			// re-read. Deliberately *not* on `version`: that is bumped by notify(),
-			// and every pass blanks the list to its loading state first — so a guest
-			// notification (a binding landing, the guest coming up) wiped the list
-			// out from under whoever was reading it. `reload` is the explicit
-			// re-read, and it is the only thing that should blank the list.
+			// Read the session's messages when the picker opens, when the row set
+			// it needs changes (see `needAdvanced`: the advanced switch in one view,
+			// a turn that contributes detail in the other), when the Session
+			// changes, and when the user asks for a re-read. Deliberately *not* on
+			// `version`: that is bumped by notify(), and every pass blanks the list
+			// to its loading state first — so a guest notification (a binding
+			// landing, the guest coming up) wiped the list out from under whoever
+			// was reading it. `reload` is the explicit re-read, and it is the only
+			// thing that should blank the list.
 			React.useEffect(() => {
 				if (!pickerOpen || sessionId === undefined) return undefined
 				let cancelled = false
@@ -2057,7 +2377,7 @@ window.__ModuleLoader__.load({
 				// step it is. The fetch is measured separately from the state write,
 				// so a slow host query is distinguishable from a slow render.
 				const t0 = Date.now()
-				diagEvent('picker:open', { sessionId: String(sessionId) })
+				diagEvent('picker:open', { sessionId: String(sessionId), detail: needAdvanced })
 				// A new fetch starts a new window: without this, paging a long session
 				// and then opening another one would begin already expanded.
 				setPageSize(LIST_PAGE_SIZE)
@@ -2070,7 +2390,7 @@ window.__ModuleLoader__.load({
 						const response = await fetch(
 							ROUTES.messages
 							+ '?sessionId=' + encodeURIComponent(sessionId)
-							+ (advanced ? '&advanced=1' : ''),
+							+ (needAdvanced ? '&advanced=1' : ''),
 						)
 						const payload = await response.json()
 						const fetched = Date.now() - t0
@@ -2106,7 +2426,7 @@ window.__ModuleLoader__.load({
 				return () => {
 					cancelled = true
 				}
-			}, [pickerOpen, sessionId, reload, advanced])
+			}, [pickerOpen, sessionId, reload, needAdvanced])
 
 			const labels = React.useMemo(() => ({
 				user: t('picker.role.user'),
@@ -2128,6 +2448,100 @@ window.__ModuleLoader__.load({
 				if (messages === null) return []
 				return messages.filter((row) => selected.has(row.id))
 			}, [messages, selected])
+
+			// Stable identity for the turns, derived from rows rather than stored,
+			// so a re-read cannot leave the panel pointing at turns that moved.
+			React.useEffect(() => {
+				if (messages === null) {
+					setTurns([])
+					setTruncatedTurns(0)
+					return
+				}
+				// A long session can hold more turns than a sidebar should build at
+				// once; the newest are the ones worth quoting, so the list keeps the
+				// tail and says how many older ones are not shown.
+				const grouped = groupTurns(messages)
+				const kept = grouped.length <= TURN_PAGE_SIZE
+					? grouped
+					: grouped.slice(grouped.length - TURN_PAGE_SIZE)
+				setTurns(kept)
+				setTruncatedTurns(grouped.length - kept.length)
+				// Edits to a turn that is no longer in the list would silently come
+				// back if a row with the same id reappeared, so they are pruned with
+				// the turns they belong to.
+				setOverrides((current) => {
+					if (current.size === 0) return current
+					const live = new Set(kept.map((turn) => turn.id))
+					let changed = false
+					const next = new Map()
+					for (const [key, fields] of current) {
+						if (live.has(key)) next.set(key, fields)
+						else changed = true
+					}
+					return changed ? next : current
+				})
+				setExpanded((current) => {
+					if (current.size === 0) return current
+					const live = new Set(kept.map((turn) => turn.id))
+					let changed = false
+					const next = new Set()
+					for (const key of current) {
+						if (live.has(key)) next.add(key)
+						else changed = true
+					}
+					return changed ? next : current
+				})
+			}, [messages])
+
+			// Which of the four a turn is currently contributing, as far as the
+			// selection is concerned: a field counts as on when every row it owns is
+			// ticked, off when none are, and mixed in between — which is what a
+			// hand-ticked row inside a turn produces.
+			const fieldState = React.useCallback((turn, field) => {
+				const ids = fieldIds(turn, field)
+				if (ids.length === 0) return 'empty'
+				let on = 0
+				for (const id of ids) if (selected.has(id)) on += 1
+				if (on === 0) return 'off'
+				if (on === ids.length) return 'on'
+				return 'mixed'
+			}, [selected])
+
+			// Turn view's ticking runs through the same `selected` set as the
+			// message view, so the two views can never disagree about what is
+			// going to be sent.
+			const setField = React.useCallback((turn, field, on) => {
+				const fields = fieldsFor(defaultChoice.fields, overrides, turn.id)
+				const next = on
+					? (fields.includes(field) ? fields : TURN_PRESETS.full.filter((f) => f === field || fields.includes(f)))
+					: fields.filter((f) => f !== field)
+				setOverrides((current) => {
+					const map = new Map(current)
+					// Equal to the default again? Then stop overriding it, so a later
+					// default change reaches this turn like any other.
+					if (sameFields(next, defaultChoice.fields)) map.delete(turn.id)
+					else map.set(turn.id, next)
+					return map
+				})
+				setSelected((current) => {
+					const ids = fieldIds(turn, field)
+					const copy = new Set(current)
+					for (const id of ids) {
+						if (on) copy.add(id)
+						else copy.delete(id)
+					}
+					return copy
+				})
+			}, [defaultChoice, overrides])
+
+			const toggleTurn = React.useCallback((turn) => {
+				setExpanded((current) => {
+					const next = new Set(current)
+					if (next.has(turn.id)) next.delete(turn.id)
+					else next.add(turn.id)
+					return next
+				})
+			}, [])
 
 			// The note travels with the quoted rows, so it is composed here rather
 			// than baked into the blockquote: a bare question needs no account of
@@ -2166,18 +2580,97 @@ window.__ModuleLoader__.load({
 				node.scrollTop = node.scrollHeight
 			}, [messages, pickerOpen, pageSize])
 
-			// Ticking is a plain set flip on the row's `id`. The row itself is the
-			// click target (see the row markup), so there is exactly one handler
-			// between the pointer and the state — no `<label>` forwarding a click
-			// to a hidden `<input>` behind React's back.
-			const toggle = React.useCallback((id) => {
-				setSelected((current) => {
-					const next = new Set(current)
+			// Ticking is a flip on the row's `id`. The row itself is the click
+			// target (see the row markup), so there is exactly one handler between
+			// the pointer and the state — no `<label>` forwarding a click to a
+			// hidden `<input>` behind React's back.
+			const rowIndexOf = React.useCallback((event) => {
+				const element = event.currentTarget
+				return Number(element?.getAttribute('data-index') ?? '')
+			}, [])
+
+			// The list of rows a gesture applies to: everything mounted, oldest
+			// first. Ranges are resolved against the rows on screen, so a range
+			// never silently spans pages the reader cannot see.
+			const rangeOf = React.useCallback((from, to) => {
+				const rows = messages
+				if (rows === null) return []
+				const span = spanOf(from, to)
+				return span === null ? [] : spanIds(rows, span)
+			}, [messages])
+
+			// One click on a row: tick it, and place the anchor a range is measured
+			// from.
+			//
+			// Plain click toggles. Shift-click redraws the range from the anchor —
+			// it does not add to the previous range, which is what lets a range be
+			// shrunk by clicking nearer the anchor instead of being cleared and
+			// rebuilt. Ctrl+Shift adds a range to the selection that existed before
+			// the run of modified clicks began, which is how two separate blocks
+			// end up selected together.
+			const onRowClick = React.useCallback((event, id, index) => {
+				const state = selRef.current
+				const shift = event.shiftKey === true
+				const ctrl = event.ctrlKey === true || event.metaKey === true
+
+				if (!shift) {
+					const next = new Set(selected)
 					if (next.has(id)) next.delete(id)
 					else next.add(id)
-					return next
-				})
+					selRef.current = { anchor: index, focus: index, base: new Set(next), additive: false }
+					setSelected(next)
+					return
+				}
+
+				// A range needs an anchor. Without one, the row clicked becomes it
+				// and the range is that single row — the same thing a plain click
+				// would have done, without the surprise of selecting an arbitrary
+				// span.
+				const start = state.focus ?? state.anchor ?? index
+				const baseSelection = state.focus === null ? new Set(selected) : state.base
+				const additive = ctrl || state.additive
+				const next = additive ? new Set(baseSelection) : new Set()
+				for (const rowId of rangeOf(start, index)) next.add(rowId)
+				selRef.current = {
+					anchor: state.anchor ?? index,
+					focus: index,
+					base: baseSelection,
+					additive,
+				}
+				setSelected(next)
+			}, [selected, rangeOf])
+
+			// The bulk actions all go through here so the anchor does not point at
+			// a row that is no longer ticked when the next Shift-click arrives.
+			const replaceSelection = React.useCallback((ids, anchorIndex) => {
+				const next = ids instanceof Set ? ids : new Set(ids)
+				selRef.current = {
+					anchor: anchorIndex ?? null,
+					focus: anchorIndex ?? null,
+					base: new Set(next),
+					additive: false,
+				}
+				setSelected(next)
 			}, [])
+
+			// 「选末尾 N」 is a range from the Nth-from-last row to the newest, which
+			// is exactly what two Shift-clicks would produce — so it leaves the
+			// anchor at its far end and the next Shift-click can grow or shrink it
+			// instead of starting over.
+			const selectLast = React.useCallback((count) => {
+				const rows = messages ?? []
+				const start = Math.max(0, rows.length - count)
+				replaceSelection(rangeOf(start, rows.length - 1), start)
+			}, [messages, rangeOf, replaceSelection])
+
+			const selectAll = React.useCallback(() => {
+				const rows = messages ?? []
+				replaceSelection(rows.map((row) => row.id), rows.length === 0 ? null : 0)
+			}, [messages, replaceSelection])
+
+			const selectNone = React.useCallback(() => {
+				replaceSelection(new Set(), null)
+			}, [replaceSelection])
 
 			const push = React.useCallback(async (send) => {
 				if (preview.trim() === '') return
@@ -2242,10 +2735,8 @@ window.__ModuleLoader__.load({
 					return undefined
 				}
 				const tick = () => {
-					if (!autoSend) {
-						setGateNote('')
-						return
-					}
+					// Only the sending button is paced, so the note only exists
+					// while the panel is open and only for the send button.
 					const gate = sendGate()
 					if (gate.ok === true) {
 						setGateNote('')
@@ -2263,7 +2754,7 @@ window.__ModuleLoader__.load({
 				tick()
 				const timer = setInterval(tick, 1000)
 				return () => clearInterval(timer)
-			}, [pickerOpen, autoSend, t])
+			}, [pickerOpen, t])
 
 			const unbind = React.useCallback(async () => {
 				if (sessionId === undefined) return
@@ -2289,7 +2780,15 @@ window.__ModuleLoader__.load({
 			// failure message is far too long for a toolbar.
 			const statusGlyph = state.failure !== '' ? '⚠' : (bound !== null ? '●' : '○')
 
-			const toolbar = h('div', { className: 'dswc-toolbar' }, [
+			// Two strips, and the split is what they are for rather than where they
+			// fit. The 38px strip is the shell's own tab-header line and carries
+			// what is true of the panel whatever is in it: the binding, which view
+			// you are in, how much is ticked, and the two things that act on the
+			// whole panel. The strip under it belongs to one view and changes with
+			// it. Collapsing both into the 38px line was tried by the first design
+			// and does not survive a sidebar: eight controls in one 38px row is a
+			// row of unreadable abbreviations.
+			const toolbar = h('div', { key: 'toolbar', className: 'dswc-toolbar' }, [
 				h('span', {
 					key: 'status',
 					className: 'dswc-status',
@@ -2298,12 +2797,44 @@ window.__ModuleLoader__.load({
 					'aria-label': statusText,
 					'data-state': state.failure !== '' ? 'error' : (bound !== null ? 'bound' : 'unbound'),
 				}, statusGlyph),
+				pickerOpen
+					? h('span', { key: 'views', className: 'dswc-segmented', role: 'tablist' }, [
+						h('button', {
+							key: 'messages',
+							type: 'button',
+							role: 'tab',
+							className: 'dswc-segment',
+							'aria-selected': view === 'messages' ? 'true' : 'false',
+							title: t('view.messagesHint'),
+							onClick: () => setView('messages'),
+						}, t('view.messages')),
+						h('button', {
+							key: 'turns',
+							type: 'button',
+							role: 'tab',
+							className: 'dswc-segment',
+							'aria-selected': view === 'turns' ? 'true' : 'false',
+							title: t('view.turnsHint'),
+							onClick: () => setView('turns'),
+						}, t('view.turns')),
+					])
+					: null,
+				pickerOpen
+					? h('span', { key: 'count', className: 'dswc-muted' },
+						format(t('picker.selected'), { count: chosen.length }))
+					: null,
 				h('span', { key: 'gap', className: 'dswc-gap' }),
 				h('button', {
 					key: 'send',
 					type: 'button',
-					className: 'dswc-button',
-					onClick: () => setPickerOpen((open) => !open),
+					className: pickerOpen ? 'dswc-button' : 'dswc-button dswc-primary',
+					onClick: () => {
+						setPickerOpen((open) => !open)
+						if (pickerOpen) return
+						// Every open starts a fresh gesture history; a range left over
+						// from the last visit would act on rows that may have moved.
+						selRef.current = emptySelection()
+					},
 				}, pickerOpen ? t('action.back') : t('action.send')),
 				h('button', {
 					key: 'reload',
@@ -2328,6 +2859,56 @@ window.__ModuleLoader__.load({
 				}, t('action.rebind')),
 			])
 
+			// How many rows the picker is holding, which the shared strip and the
+			// list below both read. Declared before both of them: the body is one
+			// straight-line function, so a `const` read before its declaration is a
+			// `ReferenceError` at runtime, not `undefined`.
+			const total = messages === null ? 0 : messages.length
+
+			// What both views offer: the two ways to start over, the one way to
+			// grow a selection to the end, and the note that travels with the quote.
+			// 「重新读取」 is here rather than in the 38px strip because it re-reads
+			// this list, not the panel.
+			const sharedActions = [
+				h('button', {
+					key: 'all',
+					type: 'button',
+					className: 'dswc-button',
+					disabled: total === 0,
+					onClick: selectAll,
+				}, t('action.all')),
+				h('button', {
+					key: 'none',
+					type: 'button',
+					className: 'dswc-button',
+					disabled: chosen.length === 0,
+					onClick: selectNone,
+				}, t('action.none')),
+				h('button', {
+					key: 'refresh',
+					type: 'button',
+					className: 'dswc-button',
+					title: t('picker.refreshHint'),
+					onClick: () => {
+						selRef.current = emptySelection()
+						setReload((value) => value + 1)
+					},
+				}, t('action.refresh')),
+				h('label', {
+					key: 'preamble',
+					className: 'dswc-advanced',
+					title: t('picker.preambleHint'),
+				}, [
+					h('input', {
+						key: 'box',
+						type: 'checkbox',
+						checked: preamble,
+						onChange: (event) => setPreamble(event.target.checked),
+					}),
+					h('span', { key: 'text' }, t('picker.preamble')),
+				]),
+			]
+
 			const toastRow = toast === ''
 				? null
 				: h('div', { className: 'dswc-toast' }, toast)
@@ -2342,244 +2923,404 @@ window.__ModuleLoader__.load({
 				])
 			}
 
-			if (!pickerOpen) {
-				return h('div', { className: 'dswc-root' }, [
-					toolbar,
-					h('div', { key: 'host', className: 'dswc-host', ref: hostRef }),
-					toastRow,
-				])
-			}
-
 			// Paged from the newest rows backwards. The list opens scrolled to the
-			// bottom, so the newest few are what a person reads and picks from;
-			// older rows are pulled in a page at a time from the top. Selection is
-			// by row id, not by mounted row, so 全选 and 选末尾 still act on the whole
-			// session however few rows are on screen.
-			const total = messages === null ? 0 : messages.length
+			// bottom, so the newest rows are what a person reads and picks from;
+			// older rows are pulled in a page at a time from the top.
+			//
+			// A range is resolved over the rows this picker holds (`messages`), not
+			// over the mounted slice, and that is deliberate: 全选 acts on the whole
+			// session, so a Shift-click after a 全选 has to as well, or the reader
+			// watches rows past the fold lose their tick when they extend. The
+			// consequence is that the far end of a range may be off screen, so the
+			// count of a range reports how much of it is above the mounted slice.
 			const start = Math.max(0, total - pageSize)
 			const hiddenEarlier = start > 0
 			const shown = messages === null ? null : messages.slice(start)
-			const list = shown === null
-				? h('div', { className: 'dswc-notice' }, t('picker.loading'))
+			const loadErrorRow = loadError === ''
+				? null
+				: h('p', { key: 'error', className: 'dswc-muted' }, loadError)
+
+			// What a row is marked as, and where in the list it is. `data-index`
+			// is the row's position in the whole list, which is what a shift-click
+			// resolves its range against.
+			const rowNode = (row, index) => {
+				const ticked = selected.has(row.id)
+				return h('div', {
+					key: row.id,
+					className: 'dswc-row',
+					// The whole row is the control. It used to be a `<label>`
+					// wrapping a native checkbox, so a click on the text only
+					// reached the input by the browser forwarding it, and the
+					// row's identity was the raw event `seq` — which a sibling
+					// row from the same event also carried. One element, one
+					// handler now, and `row.id` is unique.
+					role: 'checkbox',
+					tabIndex: 0,
+					'aria-checked': ticked ? 'true' : 'false',
+					'data-role': row.role,
+					'data-kind': row.kind ?? row.role,
+					'data-id': row.id,
+					'data-index': String(index),
+					'data-seq': String(row.seq),
+					onClick: (event) => onRowClick(event, row.id, index),
+					onKeyDown: (event) => {
+						if (event.key !== ' ' && event.key !== 'Enter') return
+						event.preventDefault()
+						// The keyboard has no Shift-click, so it gets the one thing
+						// modifier-clicking exists for: extend from the last row
+						// touched to this one.
+						if (event.shiftKey) {
+							onRowClick({ shiftKey: true, ctrlKey: false, metaKey: false }, row.id, index)
+							return
+						}
+						onRowClick({ shiftKey: false, ctrlKey: false, metaKey: false }, row.id, index)
+					},
+				}, [
+					h('span', { key: 'box', className: 'dswc-box', 'aria-hidden': 'true' }),
+					h('span', {
+						key: 'role',
+						className: 'dswc-role',
+						title: kindLabel(row, labels),
+					}, [
+						KindIcon(row.kind ?? row.role),
+						h('span', { key: 'label', className: 'dswc-roleLabel' }, kindLabel(row, labels)),
+					]),
+					h('span', { key: 'text', className: 'dswc-text' }, row.text),
+				])
+			}
+
+			// The pager header: how many older rows are not mounted, and one button
+			// to pull a page of them in.
+			const pagerHead = (count) => h('div', { key: 'more', className: 'dswc-more' }, [
+				h('button', {
+					key: 'load',
+					type: 'button',
+					className: 'dswc-button',
+					onClick: () => {
+						// Remember the topmost visible row, so the effect above can
+						// hold the reader's place while the earlier rows are
+						// inserted above it.
+						const node = listRef.current
+						const first = node === null ? null : node.querySelector('.dswc-row')
+						anchoredRef.current = first === null
+							? null
+							: first.getAttribute('data-id')
+						setPageSize((size) => size + LIST_PAGE_SIZE)
+					},
+				}, format(t('action.loadEarlier'), { count: Math.min(LIST_PAGE_SIZE, count) })),
+				h('span', { key: 'left', className: 'dswc-muted' },
+					format(t('picker.hiddenEarlier'), { count })),
+			])
+
+			// Rows the host left out of the response entirely (it caps the total
+			// size of a reply). They are older than everything here and cannot be
+			// paged to, so say so once rather than silently disagreeing with 全选.
+			const droppedHead = dropped === 0
+				? null
+				: h('div', { key: 'dropped', className: 'dswc-more' },
+					format(t('picker.droppedEarlier'), { count: dropped }))
+
+			const messageList = shown === null
+				? h('div', { key: 'list', className: 'dswc-notice' }, t('picker.loading'))
 				: shown.length === 0
-					? h('div', { className: 'dswc-notice' }, [
+					? h('div', { key: 'list', className: 'dswc-notice' }, [
 						h('p', { key: 'a' }, advanced ? t('picker.emptyAdvanced') : t('picker.empty')),
-						loadError === '' ? null : h('p', { key: 'b', className: 'dswc-muted' }, loadError),
+						loadErrorRow,
 					])
-					: h('div', { className: 'dswc-list', ref: listRef }, [
-						hiddenEarlier
-							? h('div', { key: 'more', className: 'dswc-more' }, [
-								h('button', {
-									key: 'load',
-									type: 'button',
-									className: 'dswc-button',
-									onClick: () => {
-										// Remember the topmost visible row, so the effect
-										// above can hold the reader's place while the
-										// earlier rows are inserted above it.
-										const node = listRef.current
-										const first = node === null
-											? null
-											: node.querySelector('.dswc-row')
-										anchoredRef.current = first === null
-											? null
-											: first.getAttribute('data-id')
-										setPageSize((size) => size + LIST_PAGE_SIZE)
-									},
-								}, format(t('action.loadEarlier'), {
-									count: Math.min(LIST_PAGE_SIZE, start),
+					: h('div', { key: 'list', className: 'dswc-list', ref: listRef }, [
+						hiddenEarlier ? pagerHead(start) : null,
+						droppedHead,
+						...shown.map((row, offset) => rowNode(row, start + offset)),
+					])
+
+			const turnList = turns.length === 0
+				? h('div', { key: 'list', className: 'dswc-notice' }, [
+					h('p', { key: 'a' }, t('picker.emptyTurns')),
+					loadErrorRow,
+				])
+				: h('div', { key: 'list', className: 'dswc-list', ref: listRef }, [
+					truncatedTurns === 0
+						? null
+						: h('div', { key: 'truncated', className: 'dswc-more' },
+							format(t('picker.turnsTruncated'), { count: truncatedTurns })),
+					...turns.map((turn) => {
+						const open = expanded.has(turn.id)
+						const head = h('div', {
+							key: 'head',
+							className: 'dswc-turnHead',
+							role: 'button',
+							tabIndex: 0,
+							'aria-expanded': open ? 'true' : 'false',
+							onClick: () => toggleTurn(turn),
+							onKeyDown: (event) => {
+								if (event.key !== ' ' && event.key !== 'Enter') return
+								event.preventDefault()
+								toggleTurn(turn)
+							},
+						}, [
+							h('span', { key: 'caret', className: 'dswc-caret', 'aria-hidden': 'true' },
+								open ? '▾' : '▸'),
+							h('span', { key: 'no', className: 'dswc-turnNo' },
+								format(t('picker.turnNo'), { n: turn.turn })),
+							h('span', { key: 'title', className: 'dswc-turnTitle' }, turn.title),
+							h('span', { key: 'meta', className: 'dswc-muted' },
+								format(t('picker.turnMeta'), {
+									rows: turn.rows.length,
+									selected: turn.rows.filter((row) => selected.has(row.id)).length,
 								})),
-								h('span', { key: 'left', className: 'dswc-muted' },
-									format(t('picker.hiddenEarlier'), { count: start })),
+						])
+						return h('div', {
+							key: turn.id,
+							className: 'dswc-turn',
+							'data-id': turn.id,
+						}, [
+							head,
+							h('div', { key: 'fields', className: 'dswc-turnFields' },
+								TURN_FIELDS.map((field) => {
+									const state = fieldState(turn, field)
+									const on = state === 'on'
+									return h('label', {
+										key: field,
+										className: 'dswc-field',
+										'data-state': state,
+										title: t('picker.field.' + field + 'Hint'),
+									}, [
+										h('span', {
+											key: 'box',
+											className: 'dswc-box',
+											'data-mixed': state === 'mixed' ? 'true' : 'false',
+											'aria-hidden': 'true',
+										}),
+										h('span', { key: 'text' }, t('picker.field.' + field)),
+										// The real control, visually hidden and driven by
+										// the label: it is here for the keyboard and for
+										// assistive technology, not for the layout.
+										h('input', {
+											key: 'control',
+											type: 'checkbox',
+											className: 'dswc-srOnly',
+											checked: on,
+											disabled: state === 'empty',
+											'aria-label': t('picker.field.' + field),
+											onChange: (event) => setField(turn, field, event.target.checked),
+										}),
+									])
+								}),
+							),
+							open
+								? h('div', { key: 'rows', className: 'dswc-turnRows' },
+									turn.rows.map((row) => rowNode(row, messages === null ? 0 : messages.indexOf(row))))
+								: null,
+						])
+					}),
+				])
+
+			// The turn view's default, as a bubble rather than a native select.
+			//
+			// A native `<select>` cannot carry checkboxes at all, and a `multiple`
+			// one opens a listbox nobody expects in a 300px sidebar. So both of the
+			// panel's dropdowns — this one and 「选末尾 N」 — are drawn here instead:
+			// a positioned menu under its own button, with a real checkbox or a real
+			// button per row, which also makes them immune to the white-on-white
+			// native popup this plugin used to have to measure `color-scheme` for.
+			const presetValue = (() => {
+				const fields = defaultChoice.fields
+				const named = Object.keys(TURN_PRESETS).find((name) => sameFields(TURN_PRESETS[name], fields))
+				return named ?? 'custom'
+			})()
+
+			const presetMenu = presetOpen
+				? h('div', { key: 'menu', className: 'dswc-menu' }, [
+					h('div', { key: 'title', className: 'dswc-menuTitle' }, t('picker.turnDefault')),
+					...TURN_FIELDS.map((field) => {
+						const full = TURN_PRESETS.full
+						const on = defaultChoice.fields.includes(field)
+						return h('label', {
+							key: field,
+							className: 'dswc-field',
+							'data-state': on ? 'on' : 'off',
+							title: t('picker.field.' + field + 'Hint'),
+						}, [
+							h('span', {
+								key: 'box',
+								className: 'dswc-box',
+								'data-mixed': 'false',
+								'aria-hidden': 'true',
+							}),
+							h('span', { key: 'text' }, t('picker.field.' + field)),
+							h('input', {
+								key: 'control',
+								type: 'checkbox',
+								className: 'dswc-srOnly',
+								checked: on,
+								'aria-label': t('picker.field.' + field),
+								onChange: (event) => {
+									const next = event.target.checked
+										? full.filter((name) => name === field || defaultChoice.fields.includes(name))
+										: defaultChoice.fields.filter((name) => name !== field)
+									const preset = Object.keys(TURN_PRESETS)
+										.find((name) => sameFields(TURN_PRESETS[name], next)) ?? 'custom'
+									setDefaultChoice({ preset, fields: next })
+									saveTurnPreset(preset, next)
+								},
+							}),
+						])
+					}),
+					// The presets, as one click each: the common answer to "how much
+					// of a turn do I want" is one of three, not a hand-picked set.
+					h('div', { key: 'presets', className: 'dswc-menuPresets' },
+						Object.keys(TURN_PRESETS).map((name) => h('button', {
+							key: name,
+							type: 'button',
+							className: presetValue === name
+								? 'dswc-button dswc-segmentActive'
+								: 'dswc-button',
+							onClick: () => {
+								setDefaultChoice({ preset: name, fields: TURN_PRESETS[name] })
+								saveTurnPreset(name, TURN_PRESETS[name])
+								setPresetOpen(false)
+							},
+						}, t('picker.preset.' + name)))),
+					// No 「应用到全部」 on purpose: a turn nobody edited reads this
+					// default directly, so changing it already moves every one of
+					// them, and a turn that was edited keeps its own choice.
+					h('p', { key: 'note', className: 'dswc-muted' }, t('picker.turnDefaultNote')),
+				])
+				: null
+
+			const viewActions = view === 'messages'
+				? [
+					// Quoting the tail of a conversation is the common case, so it
+					// gets its own control instead of asking for hand-ticking.
+					h('label', {
+						key: 'lastCount',
+						className: 'dswc-lastWrap',
+					}, [
+						h('button', {
+							key: 'toggle',
+							type: 'button',
+							className: 'dswc-button',
+							'aria-expanded': lastOpen ? 'true' : 'false',
+							title: t('picker.lastCount'),
+							onClick: () => setLastOpen((open) => !open),
+						}, format(t('action.lastWithCount'), { count: lastN })),
+						lastOpen
+							? h('div', { key: 'menu', className: 'dswc-menu dswc-menuInline' }, [
+								... [5, 10, 20, 50].map((n) => h('button', {
+									key: n,
+									type: 'button',
+									className: n === lastN ? 'dswc-button dswc-segmentActive' : 'dswc-button',
+									onClick: () => {
+										setLastN(n)
+										setLastOpen(false)
+										selectLast(n)
+									},
+								}, String(n))),
 							])
 							: null,
-						// Rows the host left out of the response entirely (it caps the
-						// total size of a reply). They are older than everything here
-						// and cannot be paged to, so say so once rather than silently
-						// disagreeing with 全选 and 选末尾.
-						dropped === 0
-							? null
-							: h('div', { key: 'dropped', className: 'dswc-more' },
-								format(t('picker.droppedEarlier'), { count: dropped })),
-						...shown.map((row) => {
-							const ticked = selected.has(row.id)
-							return h('div', {
-								key: row.id,
-								className: 'dswc-row',
-								// The whole row is the control. It used to be a
-								// `<label>` wrapping a native checkbox, so a click on
-								// the text only reached the input by the browser
-								// forwarding it, and the row's identity was the raw
-								// event `seq` — which a sibling row from the same
-								// event also carried. One element, one handler now,
-								// and `row.id` is unique.
-								role: 'checkbox',
-								tabIndex: 0,
-								'aria-checked': ticked ? 'true' : 'false',
-								'data-role': row.role,
-								'data-kind': row.kind ?? row.role,
-								'data-id': row.id,
-								'data-seq': String(row.seq),
-								onClick: () => toggle(row.id),
-								onKeyDown: (event) => {
-									if (event.key !== ' ' && event.key !== 'Enter') return
-									event.preventDefault()
-									toggle(row.id)
-								},
-							}, [
-								h('span', { key: 'box', className: 'dswc-box', 'aria-hidden': 'true' }),
-								h('span', {
-									key: 'role',
-									className: 'dswc-role',
-									title: kindLabel(row, labels),
-								}, [
-									KindIcon(row.kind ?? row.role),
-									h('span', { key: 'label', className: 'dswc-roleLabel' }, kindLabel(row, labels)),
-								]),
-								h('span', { key: 'text', className: 'dswc-text' }, row.text),
-							])
+					]),
+					// The advanced switch swaps the whole row set rather than
+					// revealing hidden rows: the host filters, so a tool result the
+					// user never opted into is never sent to the browser at all.
+					h('label', {
+						key: 'advanced',
+						className: 'dswc-advanced',
+						title: t('picker.advancedHint'),
+					}, [
+						h('input', {
+							key: 'box',
+							type: 'checkbox',
+							checked: advanced,
+							onChange: (event) => {
+								setAdvanced(event.target.checked)
+								// The row set itself is about to be swapped, so every id in
+								// the current selection is a row the picker will no longer
+								// hold — and a tick that cannot be seen cannot be unticked.
+								replaceSelection(new Set(), null)
+							},
 						}),
-					])
+						h('span', { key: 'text' }, t('picker.advanced')),
+					]),
+				]
+				: [
+					h('div', { key: 'default', className: 'dswc-lastWrap' }, [
+						h('button', {
+							key: 'toggle',
+							type: 'button',
+							className: 'dswc-button',
+							'aria-expanded': presetOpen ? 'true' : 'false',
+							title: t('picker.turnDefaultHint'),
+							onClick: () => setPresetOpen((open) => !open),
+						}, t('picker.turnDefault')),
+						presetMenu === null ? null : h('div', { key: 'menuWrap' }, [presetMenu]),
+					]),
+				]
+
+			const viewBar = h('div', { className: 'dswc-viewBar' }, [
+				...sharedActions,
+				h('span', { key: 'gap', className: 'dswc-gap' }),
+				...viewActions,
+			])
 
 			return h('div', { className: 'dswc-root' }, [
 				toolbar,
 				h('div', { key: 'picker', className: 'dswc-picker' }, [
-					h('div', { key: 'head', className: 'dswc-pickerHead', ref: headRef }, [
-						h('span', { key: 'title', className: 'dswc-pickerTitle' }, t('picker.title')),
-						h('span', { key: 'count', className: 'dswc-muted' },
-							format(t('picker.selected'), { count: chosen.length })),
-						h('span', { key: 'gap', className: 'dswc-gap' }),
-						h('button', {
-							key: 'all',
-							type: 'button',
-							className: 'dswc-button',
-							onClick: () => setSelected(new Set((messages ?? []).map((row) => row.id))),
-						}, t('action.all')),
-						h('button', {
-							key: 'none',
-							type: 'button',
-							className: 'dswc-button',
-							onClick: () => setSelected(new Set()),
-						}, t('action.none')),
-						// Quoting the tail of a conversation is the common case, so
-						// it gets its own control instead of asking for hand-ticking.
-						h('select', {
-							key: 'lastN',
-							className: 'dswc-select',
-							// Without this the popup is drawn with the browser's own
-							// light defaults while the option text inherits the app's
-							// ink, which is how the list came to look empty until a
-							// row was hovered.
-							style: { colorScheme: scheme },
-							title: t('picker.lastCount'),
-							'aria-label': t('picker.lastCount'),
-							value: String(lastN),
-							onChange: (event) => setLastN(Number(event.target.value)),
-						}, [5, 10, 20, 50].map((n) => h('option', { key: n, value: String(n) }, String(n)))),
-						h('button', {
-							key: 'last',
-							type: 'button',
-							className: 'dswc-button',
-							disabled: (messages ?? []).length === 0,
-							onClick: () => {
-								const rows = messages ?? []
-								setSelected(new Set(
-									rows.slice(Math.max(0, rows.length - lastN)).map((row) => row.id),
-								))
-							},
-						}, t('action.last')),
-						h('button', {
-							key: 'refresh',
-							type: 'button',
-							className: 'dswc-button',
-							onClick: () => setReload((value) => value + 1),
-						}, t('action.refresh')),
-						// The advanced switch swaps the whole row set rather than
-						// revealing hidden rows: the host filters, so a tool result the
-						// user never opted into is never sent to the browser at all.
-						h('label', {
-							key: 'advanced',
-							className: 'dswc-advanced',
-							title: t('picker.advancedHint'),
-						}, [
-							h('input', {
-								key: 'box',
-								type: 'checkbox',
-								checked: advanced,
-								onChange: (event) => {
-									setAdvanced(event.target.checked)
-									// Selections refer to rows that may no longer exist.
-									setSelected(new Set())
-								},
-							}),
-							h('span', { key: 'text' }, t('picker.advanced')),
-						]),
-						h('label', {
-							key: 'preamble',
-							className: 'dswc-advanced',
-							title: t('picker.preambleHint'),
-						}, [
-							h('input', {
-								key: 'box',
-								type: 'checkbox',
-								checked: preamble,
-								onChange: (event) => setPreamble(event.target.checked),
-							}),
-							h('span', { key: 'text' }, t('picker.preamble')),
-						]),
-						h('label', {
-							key: 'autoSend',
-							className: 'dswc-advanced',
-							title: t('picker.autoSendHint'),
-						}, [
-							h('input', {
-								key: 'box',
-								type: 'checkbox',
-								checked: autoSend,
-								onChange: (event) => setAutoSend(event.target.checked),
-							}),
-							h('span', { key: 'text' }, t('picker.autoSend')),
-						]),
-					]),
-					list,
+					// Keyed by view: the two lists are different components' worth of
+					// markup, and swapping them without a key makes React reuse the
+					// scroll container across the swap.
+					h('div', { key: 'viewBar' }, [viewBar]),
+					h('div', { key: 'listWrap' }, [view === 'messages' ? messageList : turnList]),
 					h('div', { key: 'compose', className: 'dswc-compose' }, [
-						h('label', { key: 'qlabel', className: 'dswc-label' }, t('picker.question')),
 						h('textarea', {
 							key: 'question',
 							className: 'dswc-question',
-							rows: 3,
+							rows: 2,
 							value: question,
 							placeholder: t('picker.questionPlaceholder'),
+							title: t('picker.question'),
 							onChange: (event) => setQuestion(event.target.value),
 						}),
-						h('label', { key: 'plabel', className: 'dswc-label' }, t('picker.preview')),
-						h('pre', { key: 'preview', className: 'dswc-preview' }, preview),
-						h('p', { key: 'hint', className: 'dswc-muted' }, t('picker.hint')),
+						h('div', { key: 'previewHead', className: 'dswc-previewHead' }, [
+							h('button', {
+								key: 'toggle',
+								type: 'button',
+								className: 'dswc-link',
+								'aria-expanded': previewOpen ? 'true' : 'false',
+								onClick: () => setPreviewOpen((open) => !open),
+							}, [
+								(previewOpen ? '▾ ' : '▸ ') + t('picker.preview'),
+								h('span', { key: 'size', className: 'dswc-muted' },
+									' ' + format(t('picker.previewSize'), { count: preview.length })),
+							]),
+						]),
+						previewOpen
+							? h('pre', { key: 'preview', className: 'dswc-preview' }, preview)
+							: null,
 						h('p', { key: 'policy', className: 'dswc-muted' }, t('picker.policy')),
 						gateNote === ''
 							? null
 							: h('p', { key: 'gate', className: 'dswc-muted' }, gateNote),
+						// Two buttons, and which one you press *is* the choice, so
+						// there is no mode left on for the next push. 「仅填入」 keeps the
+						// primary weight: filling the composer is a text edit, and
+						// pressing Enter is the human's move.
 						h('div', { key: 'actions', className: 'dswc-actions' }, [
-							// 「仅填入」 comes first and carries the primary weight when
-							// auto-send is off, which is the default: the normal path is
-							// that a person reads the text and presses Enter themselves.
 							h('button', {
 								key: 'fill',
 								type: 'button',
-								className: autoSend ? 'dswc-button' : 'dswc-button dswc-primary',
+								className: 'dswc-button dswc-primary',
 								disabled: busy || preview.trim() === '',
+								title: t('picker.hint'),
 								onClick: () => void push(false),
 							}, t('action.fillOnly')),
-							autoSend
-								? h('button', {
-									key: 'send',
-									type: 'button',
-									className: 'dswc-button dswc-primary',
-									disabled: busy || preview.trim() === '' || gateNote !== '',
-									title: gateNote,
-									onClick: () => void push(true),
-								}, busy ? t('status.filling') : t('action.fill'))
-								: null,
+							h('button', {
+								key: 'send',
+								type: 'button',
+								className: 'dswc-button',
+								disabled: busy || preview.trim() === '' || gateNote !== '',
+								title: gateNote === '' ? t('picker.autoSendHint') : gateNote,
+								onClick: () => void push(true),
+							}, busy ? t('status.filling') : t('action.fill')),
 							h('button', {
 								key: 'copy',
 								type: 'button',
@@ -2663,6 +3404,21 @@ window.__ModuleLoader__.load({
 
 		exports.apply = apply
 		exports.inject = inject
+		// The pure parts of the selection and turn model, exposed so `node --test`
+		// can exercise them without a DOM. The shell only ever reads `apply` and
+		// `inject`; nothing here is part of the plugin's contract.
+		exports.__internals = {
+			emptySelection,
+			spanOf,
+			spanIds,
+			fieldsFor,
+			sameFields,
+			oneLine,
+			groupTurns,
+			TURN_FIELD,
+			TURN_FIELDS,
+			TURN_PRESETS,
+		}
 		return module.exports
 	},
 })

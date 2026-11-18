@@ -3,5 +3,11 @@ node_modules/
 .DS_Store
 Thumbs.db
 
+# The scratch React install 
+pm run check:render uses. Not a dependency of the
+# package: the shell supplies React at runtime and the publish workflow installs
+# nothing, so the render checks skip when this is absent.
+.tools/
+
 # lib/ is intentionally COMMITTED: a git-hosted DSH plugin must not need a
 # build step on install. Do not add lib/ here.

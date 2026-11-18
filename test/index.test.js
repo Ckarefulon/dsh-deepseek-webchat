@@ -156,8 +156,8 @@ describe('message extraction', () => {
       { seq: 7, type: 'tool/result', data: { message: { content: [{ type: 'text', text: 'output' }] } } },
     ])
     assert.deepEqual(rows, [
-      { id: '4:0', seq: 4, role: 'user', kind: 'user', text: 'hello' },
-      { id: '5:0', seq: 5, role: 'assistant', kind: 'assistant', text: 'hi there' },
+      { id: '4:0', seq: 4, turn: 1, role: 'user', kind: 'user', text: 'hello' },
+      { id: '5:0', seq: 5, turn: 1, role: 'assistant', kind: 'assistant', text: 'hi there' },
     ])
   })
 
@@ -176,9 +176,11 @@ describe('message extraction', () => {
       { seq: 3, type: 'user/message', data: { source: { kind: 'user-question-reply', callId: 'c1' }, content: [{ type: 'text', text: 'Sidebar, please' }] } },
     ])
     assert.deepEqual(rows, [
-      { id: '1:0', seq: 1, role: 'assistant', kind: 'assistant', text: 'One question first.' },
-      { id: '2:0', seq: 2, role: 'assistant', kind: 'question', text: 'Confirm：Which layout?\n  · Sidebar — right column\n  · Center' },
-      { id: '3:0', seq: 3, role: 'user', kind: 'answer', text: 'Sidebar, please' },
+      // No human turn yet, so these rows belong to no turn rather than to a
+      // turn 0 that the picker would then have to render as a real turn.
+      { id: '1:0', seq: 1, turn: null, role: 'assistant', kind: 'assistant', text: 'One question first.' },
+      { id: '2:0', seq: 2, turn: null, role: 'assistant', kind: 'question', text: 'Confirm：Which layout?\n  · Sidebar — right column\n  · Center' },
+      { id: '3:0', seq: 3, turn: null, role: 'user', kind: 'answer', text: 'Sidebar, please' },
     ])
   })
 

@@ -308,14 +308,24 @@ describe('composer filling and sending', () => {
     assert.ok(/const pressed = await pressEnter\(\)/.test(bundle))
   })
 
-  it('keeps automatic submitting off unless it is switched on', () => {
+  it('offers sending as a second button, not a mode left switched on', () => {
     // Filling a composer is a text edit; submitting is a message this account
-    // sends. Only the second one is automation, so only the second one is opt-in.
-    assert.ok(/const \[autoSend, setAutoSend\] = React\.useState\(false\)/.test(bundle))
-    assert.ok(bundle.includes('picker.autoSend'))
+    // sends. Only the second one is automation. It used to be a checkbox whose
+    // state outlived the push; now it is a property of the button pressed, so
+    // there is no switch left on for the next push.
+    assert.equal(
+      /React\.useState\(false\)\s*\n\s*\/\/ Pacing is advisory/.test(bundle)
+        && bundle.includes('picker.autoSend'),
+      false,
+      'the auto-send switch is back',
+    )
+    // Both buttons exist, every time, and the second one sends.
+    assert.ok(bundle.includes("t('action.fillOnly')"), 'the fill-only button is gone')
+    assert.ok(bundle.includes("t('action.fill')"), 'the fill-and-send button is gone')
+    assert.ok(bundle.includes('void push(false)'))
+    assert.ok(bundle.includes('void push(true)'))
+    // The pacing note explains a disabled send button rather than a mode.
     assert.ok(bundle.includes('picker.autoSendHint'))
-    // The default action is the one that stops at the composer.
-    assert.ok(/t\('action\.fillOnly'\)/.test(bundle))
   })
 
   it('treats a cleared composer as the receipt', () => {
@@ -357,8 +367,12 @@ describe('picker affordances', () => {
   })
 
   it('offers the last few rows as one action', () => {
-    assert.ok(bundle.includes('action.last'))
-    assert.ok(bundle.includes('slice(Math.max(0, rows.length - lastN))'))
+    assert.ok(bundle.includes('action.lastWithCount'))
+    // The tail is a range from the Nth-from-last row to the newest, which also
+    // leaves the range anchor at its far end so a following Shift-click grows
+    // or shrinks it instead of starting over.
+    assert.ok(bundle.includes('const start = Math.max(0, rows.length - count)'))
+    assert.ok(bundle.includes('replaceSelection(rangeOf(start, rows.length - 1), start)'))
   })
 
   it('scrolls the list to the newest rows', () => {
@@ -377,9 +391,11 @@ describe('picker affordances', () => {
     assert.ok(bundle.includes('const LIST_PAGE_SIZE = 10'))
     assert.ok(bundle.includes('messages.slice(start)'), 'the window must be a slice')
     assert.ok(bundle.includes('setPageSize((size) => size + LIST_PAGE_SIZE)'), 'no way to grow it')
-    assert.ok(bundle.includes("t('action.loadEarlier')"))
-    // Selection is by row id, so the bulk actions still cover the whole session.
-    assert.ok(bundle.includes('new Set((messages ?? []).map((row) => row.id))'))
+    // Selection is by row id, so the bulk actions still cover the whole session
+    // rather than only the mounted page — 全选 goes through `selectAll`, which
+    // maps every row the picker holds.
+    assert.ok(bundle.includes('const rows = messages ?? []'))
+    assert.ok(bundle.includes('prepareSelection') || bundle.includes('replaceSelection'))
   })
 
   it('holds the reader place when earlier rows are inserted above', () => {
@@ -403,16 +419,70 @@ describe('picker affordances', () => {
     assert.ok(bundle.includes("'aria-checked'"))
     assert.ok(bundle.includes("key: row.id"), 'rows are keyed by seq, which repeats')
     assert.ok(bundle.includes("'data-id': row.id"))
-    assert.ok(bundle.includes('onClick: () => toggle(row.id)'))
+    // A click now also has to place the range anchor, so it goes through
+    // `onRowClick` rather than a bare `toggle(row.id)` — one handler still, and
+    // the identity that travels with it is still `row.id`.
+    assert.ok(bundle.includes('onClick: (event) => onRowClick(event, row.id, index)'))
+    assert.ok(bundle.includes("'data-index': String(index)"), 'a range needs row positions')
     assert.equal(bundle.includes("type: 'checkbox', checked"), false, 'a native input is back')
   })
 
-  it('paints the last-count dropdown for the theme it sits in', () => {
-    // The shell paints a dark app without declaring `color-scheme`, so the
-    // native popup was drawn light while the option text inherited the app's
-    // near-white ink: the list looked blank until a row was hovered.
-    assert.ok(bundle.includes('colorScheme: scheme'), 'the popup is not themed')
-    assert.ok(bundle.includes('controlScheme'), 'nothing measures the surface')
+  it('selects ranges with shift and unions them with ctrl+shift', () => {
+    // The classic desktop model: plain click toggles and places the anchor,
+    // Shift+click redraws the range from it, Ctrl+Shift+click adds a range to
+    // the selection that existed before the modified run began.
+    assert.ok(bundle.includes('function spanOf(a, b)'), 'no range arithmetic')
+    assert.ok(bundle.includes('event.shiftKey'), 'shift is not read')
+    assert.ok(bundle.includes('event.ctrlKey') && bundle.includes('event.metaKey'))
+    // The redraw-not-accumulate part: `base` is the selection the run started
+    // from, so a second Shift-click nearer the anchor shrinks the range.
+    assert.ok(bundle.includes('base: baseSelection'), 'the pre-run selection is not kept')
+    // A range is resolved over the rows the picker holds, not the mounted slice,
+    // so extending after 全选 cannot drop ticks the reader cannot see.
+    assert.ok(bundle.includes('const span = spanOf(from, to)'))
+  })
+
+  it('drops the native dropdown for popups it draws itself', () => {
+    // The shell paints a dark app without declaring `color-scheme`, so a native
+    // popup was drawn light while its option text inherited the app's near-white
+    // ink: the list looked blank until a row was hovered. Both dropdowns are now
+    // positioned menus with real buttons and checkboxes, so there is no native
+    // popup left to paint — and no `color-scheme` measurement to get wrong.
+    assert.equal(bundle.includes('colorScheme: scheme'), false, 'the native select is back')
+    assert.equal(bundle.includes('controlScheme'), false, 'dead theme measurement')
+    assert.ok(bundle.includes('dswc-menu'), 'no popup of our own')
+    assert.ok(bundle.includes("action.lastWithCount"), 'the count popup is gone')
+  })
+
+  it('groups the conversation into turns and lets each one be picked apart', () => {
+    // Turn view, the second of the two views. The four kinds are the picker's
+    // own vocabulary, and every row kind maps to one of them.
+    assert.ok(bundle.includes("const view = React.useState('messages')") || bundle.includes("'turns'"))
+    assert.ok(bundle.includes('function groupTurns(rows)'))
+    assert.ok(bundle.includes('function fieldIds(turn, field)'))
+    assert.ok(bundle.includes("picker.field.input"))
+    assert.ok(bundle.includes("picker.field.final"))
+    assert.ok(bundle.includes("picker.field.process"))
+    assert.ok(bundle.includes("picker.field.detail"))
+    // A turn nobody edited reads the default directly, which is what makes a
+    // changed default reach every untouched turn with no 「apply to all」.
+    assert.ok(bundle.includes('overrides.get(key) ?? defaults'))
+    assert.equal(bundle.includes('picker.applyToAll'), false, 'an apply-to-all crept back in')
+  })
+
+  it('keeps both views on one selection', () => {
+    // Message view and turn view tick the same `selected` set, so switching
+    // views cannot change what is going to be sent, and the count is one count.
+    assert.ok(bundle.includes('setSelected((current) => {'))
+    assert.ok(bundle.includes('selected.has(row.id)'))
+  })
+
+  it('asks for detail rows only when a turn actually contributes them', () => {
+    // Detail is the bulk of a long session (one measured at 8.9 MB of JSON), so
+    // the row set follows the choice rather than always shipping everything.
+    assert.ok(bundle.includes('const needAdvanced = view ==='))
+    assert.ok(bundle.includes('(needAdvanced ? '), 'the advanced flag is not wired to the view')
+    assert.ok(bundle.includes('detail'))
   })
 })
 
