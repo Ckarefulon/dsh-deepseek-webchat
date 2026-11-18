@@ -458,11 +458,13 @@ is needed to reopen one.
 
 ## Development
 
-Plain JavaScript ESM. No TypeScript, no bundler, no dependencies.
+Plain JavaScript ESM. No TypeScript, no bundler, and **no dependencies**: React
+is supplied by the shell at runtime, and the publish workflow installs nothing.
 
 ```bash
-npm run build   # copy src/ -> lib/
-npm test        # node --test
+npm run build        # copy src/ -> lib/
+npm test             # node --test
+npm run check:render # the same, plus the tests that need a DOM
 ```
 
 `lib/` is a byte-for-byte copy of `src/` and **is committed**, because a
@@ -470,6 +472,27 @@ git-hosted plugin must not need a build step on install. `npm test` asserts the
 two still match, so they cannot drift.
 
 After editing `src/`, run `npm run build` and commit both trees.
+
+### The tests that render
+
+`npm test` runs everything that can run with no third-party package installed.
+Two files cannot, and they skip instead of failing:
+
+| File | What it needs | What it proves |
+|---|---|---|
+| `test/render.test.mjs` | `react` | `apply()` registers what the shell expects, and the body component executes |
+| `test/picker-dom.test.mjs` | `react`, `react-dom`, `jsdom` | the picker actually draws rows, turns, and checkboxes with the states it means |
+
+`npm run check:render` installs those into a git-ignored `.tools/` and runs the
+whole suite with them, which is what `check:render` at the top of this section
+does. Run it before a release.
+
+**That distinction is not academic.** 0.6.0 shipped a turn view whose every
+checkbox rendered `off` and whose 详细内容 box could never be ticked, while 129
+tests passed — because none of them rendered the picker. The three DOM tests in
+`test/picker-dom.test.mjs` fail against 0.6.0 and pass now; `test/real-session.test.mjs`
+does the same for the model behind them, on rows captured from a real session
+rather than hand-written ones.
 
 ```
 src/index.js          host half    -> lib/index.js

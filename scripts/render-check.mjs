@@ -31,9 +31,9 @@ const tools = join(root, '.tools')
 // react and js-yaml have to go in together. Splitting them into per-check
 // installs is what made the render checks disappear the moment the patch check
 // installed its own parser.
-const TOOLS = ['react@18', 'react-dom@18', 'js-yaml@4']
+const TOOLS = ['react@18', 'react-dom@18', 'jsdom@24', 'js-yaml@4']
 
-if (!existsSync(join(tools, 'node_modules', 'react', 'index.js'))) {
+if (!existsSync(join(tools, 'node_modules', 'jsdom')) || !existsSync(join(tools, 'node_modules', 'react', 'index.js'))) {
   mkdirSync(tools, { recursive: true })
   console.log('render-check: installing ' + TOOLS.join(', ') + ' into .tools/')
   // Driving npm's own entry point beats spawning the `npm` shim: on Windows that
