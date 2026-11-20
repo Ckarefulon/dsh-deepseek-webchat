@@ -136,6 +136,28 @@ test('the body renders the "no browser channel" notice rather than throwing', { 
   assert.match(html, /status\.nobridge/)
 })
 
+test('with the picker closed the body is the page, not the picker', { skip }, () => {
+  // The regression 0.6.0 shipped: the `!pickerOpen` branch — and with it the
+  // `.dswc-host` rectangle the guest is parked on — was dropped from the render,
+  // so the panel showed the quote picker's empty shell in the page view and the
+  // DeepSeek page was never placed. The host element must be there, and the
+  // picker must not.
+  const previous = globalThis.dshDesktop
+  globalThis.dshDesktop = { protocolVersion: 1, browser: { acquire: () => ({}) } }
+  try {
+    const html = renderToStaticMarkup(React.createElement(body, {
+      sessionId: 's1',
+      t: (key) => key,
+      useTabInfo: () => ({ tab: { sessionId: 's1', visible: true } }),
+    }))
+    assert.match(html, /dswc-host/, 'the page view has no rectangle to park the guest on')
+    assert.match(html, /dswc-toolbar/)
+    assert.equal(/dswc-picker/.test(html), false, 'the picker is rendering in the page view')
+  } finally {
+    globalThis.dshDesktop = previous
+  }
+})
+
 test('the header door renders', { skip }, () => {
   const html = renderToStaticMarkup(React.createElement(registered.components['deepseek-webchat'], {
     t: (key) => key,

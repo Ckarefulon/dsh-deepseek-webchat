@@ -50,7 +50,7 @@ function loadClient() {
 }
 
 const client = loadClient()
-const { groupTurns, fieldIds, fieldsFor, TURN_PRESETS, loadTurnPreset, TURN_PRESET_DEFAULT } = client.__internals
+const { groupTurns, fieldIds, turnIds, fieldsFor, TURN_PRESETS, loadTurnPreset, TURN_PRESET_DEFAULT } = client.__internals
 
 const plain = JSON.parse(readFileSync(join(here, 'fixtures', 'real-plain.json'), 'utf8')).messages
 const advanced = JSON.parse(readFileSync(join(here, 'fixtures', 'real-advanced.json'), 'utf8')).messages
@@ -112,6 +112,22 @@ test('the advanced row set gives every real turn detail to offer', () => {
   assert.ok(turns.length >= 3)
   for (const turn of turns) {
     assert.ok(fieldIds(turn, 'detail').length > 0, `turn ${turn.turn} has no detail rows even in the advanced set`)
+  }
+})
+
+test('a whole-turn tick covers every row, fields or no fields', () => {
+  // The two controls are independent: the four field boxes narrow the choice,
+  // and the turn-level tick takes all of it. If the turn tick were built from
+  // the field sets it would change meaning whenever a kind was turned off.
+  for (const source of [plain, advanced]) {
+    for (const turn of groupTurns(source)) {
+      const ids = turnIds(turn)
+      assert.deepEqual(ids, turn.rows.map((row) => row.id))
+      assert.equal(new Set(ids).size, ids.length, 'a duplicated id would tick a row twice')
+      // The union of the four kinds is exactly the whole turn.
+      const union = TURN_PRESETS.full.flatMap((field) => fieldIds(turn, field))
+      assert.equal(new Set(union).size, ids.length, `turn ${turn.turn}: the field kinds do not cover every row`)
+    }
   }
 })
 

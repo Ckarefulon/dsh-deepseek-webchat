@@ -12,7 +12,7 @@ import { Readable } from 'node:stream'
 import { after, before, describe, it } from 'node:test'
 import { fileURLToPath } from 'node:url'
 
-import { apply, ROUTES, setStateDir } from '../src/index.js'
+import { apply, clearMessageCache, ROUTES, setStateDir } from '../src/index.js'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 
@@ -321,6 +321,37 @@ describe('messages route', () => {
     assert.equal(reads, 2)
   })
 
+  it('reads the log whichever id form the caller holds', async () => {
+    // The query service resolves sessions by the store's identity, so a caller
+    // holding the other spelling used to get `session "…" not found` for a
+    // Session that was right there — which is exactly what a sidebar tab sees
+    // after DSH changes which form its client hands out. Both spellings are
+    // tried, the id as given first.
+    const events = [
+      { seq: 1, type: 'user/message', data: { source: { kind: 'user' }, content: [{ type: 'text', text: 'one' }] } },
+    ]
+    const seen = []
+    const host = hostWith({
+      readSession: async (id) => {
+        seen.push(id)
+        if (id !== 'session-read-1') throw new Error(`session "${id}" not found`)
+        return { events }
+      },
+    })
+
+    clearMessageCache()
+    const bare = await host.call(ROUTES.messages, { query: 'sessionId=read-1' })
+    assert.equal(bare.body.ok, true, bare.body.error)
+    assert.equal(bare.body.messages.length, 1)
+    assert.deepEqual(seen, ['read-1', 'session-read-1'], 'the bare uuid was not retried as the stored form')
+
+    clearMessageCache()
+    seen.length = 0
+    const prefixed = await host.call(ROUTES.messages, { query: 'sessionId=session-read-1' })
+    assert.equal(prefixed.body.ok, true, prefixed.body.error)
+    assert.deepEqual(seen, ['session-read-1'], 'the stored form must be asked for exactly once')
+  })
+
   it('re-reads once the session has grown', async () => {
     const events = [
       { seq: 1, type: 'user/message', data: { source: { kind: 'user' }, content: [{ type: 'text', text: 'one' }] } },
@@ -384,6 +415,61 @@ describe('messages route', () => {
     assert.equal(body.messages.at(-1).seq, 1200)
     const seqs = body.messages.map((row) => row.seq)
     assert.deepEqual(seqs, [...seqs].sort((a, b) => a - b), 'surviving rows must stay in log order')
+  })
+
+  it('still lists a session whose log has one message event with no id', async () => {
+    // A real session grew a single `user/message` whose payload carried no
+    // `message.id` — one plugin appended it that way. `sessionQuery.readSession`
+    // replays the log through `Session.create`, which validates every message
+    // event, so that one event made the *whole* conversation unreadable here:
+    // `seed user/message at index 1651 lacks an identified message`. The Session
+    // itself was fine (it rendered in the app); only this reader broke. Quoting
+    // needs events, not a replayed Session, so the live Session is preferred.
+    //
+    // The offending row happens to be injected context (`source.kind` of the
+    // plugin that wrote it), which the extractor drops anyway — the point is
+    // that the human turns around it survive.
+    const events = [
+      { seq: 1, type: 'user/message', data: { source: { kind: 'user' }, content: [{ type: 'text', text: 'has an id' }] } },
+      { seq: 2, type: 'user/message', data: { source: { kind: 'dsh-mini-kit' }, content: [{ type: 'text', text: 'no id here' }] } },
+      { seq: 3, type: 'assistant/message', data: { message: { content: [{ type: 'text', text: 'and an answer' }] } } },
+    ]
+    const unreadable = {
+      readSession: async () => {
+        throw new Error('seed user/message at index 1 lacks an identified message')
+      },
+    }
+    const live = { snapshotEvents: () => events, seq: 3 }
+    const sessions = { get: (id) => (id === 'session-idless-1' ? live : undefined) }
+    clearMessageCache()
+    const host = hostWith(unreadable, undefined, sessions)
+    const { body } = await host.call(ROUTES.messages, { query: 'sessionId=session-idless-1' })
+    assert.equal(body.ok, true, body.error)
+    assert.deepEqual(body.messages.map((row) => row.text), ['has an id', 'and an answer'],
+      'the id-less row must not sink the whole conversation')
+  })
+
+  it('falls back to the stored log when the query service cannot replay it', async () => {
+    // No live Session (cold), and `readSession` rejects on validation. The
+    // persistence handle reads the same log without replaying it.
+    const events = [
+      { seq: 1, type: 'user/message', data: { source: { kind: 'user' }, content: [{ type: 'text', text: 'cold and id-less' }] } },
+    ]
+    const handle = {
+      read: async () => ({ eventState: 'shared-frozen', events }),
+      close: async () => {},
+    }
+    const persistence = { open: async () => handle, stat: async () => undefined }
+    clearMessageCache()
+    const host = hostWith({
+      readSession: async () => {
+        throw new Error('seed user/message at index 0 lacks an identified message')
+      },
+    }, persistence)
+    const { body } = await host.call(ROUTES.messages, { query: 'sessionId=session-cold-1' })
+    assert.equal(body.ok, true, body.error)
+    assert.equal(body.messages.length, 1)
+    assert.equal(body.messages[0].text, 'cold and id-less')
   })
 
   it('explains a missing session id rather than throwing', async () => {

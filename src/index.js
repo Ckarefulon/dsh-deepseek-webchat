@@ -849,12 +849,37 @@ const messageCache = new Map()
 const MESSAGE_CACHE_LIMIT = 8
 
 /**
+ * The spellings one Session id may legitimately have here.
+ *
+ * DSH has handed the same Session out as a bare uuid (its event and query APIs)
+ * and as `session-<uuid>` (the session store) — which one a caller holds
+ * depends on where it got it, and DSH has changed its mind across releases:
+ * 0.2.2 mints `session-<uuid>`. `sessions.get`, the persistence layer and
+ * `sessionQuery` each key on their own choice, so every lookup tries the id as
+ * given and then its other spelling. Trying is cheap: a miss answers
+ * `undefined` or throws, and a hit is authoritative.
+ *
+ * @param value - a Session id in either form.
+ * @returns the distinct, non-empty spellings to try, most specific first.
+ */
+export function sessionIdCandidates(value) {
+  if (typeof value !== 'string') return []
+  const given = value.trim()
+  if (given === '') return []
+  const bare = canonicalSessionId(given)
+  const candidates = [given, bare]
+  if (bare !== '') candidates.push('session-' + bare)
+  return [...new Set(candidates)].filter((id) => id !== '')
+}
+
+/**
  * @param sessionId - DSH Session id.
  * @param advanced - whether the advanced row set was requested.
- * @returns the cache key for that pair.
+ * @returns the cache key for that pair, canonicalised so both spellings of one
+ *   Session share a single entry.
  */
 function messageCacheKey(sessionId, advanced) {
-  return (advanced ? 'a\u0000' : 'p\u0000') + sessionId
+  return (advanced ? 'a\u0000' : 'p\u0000') + canonicalSessionId(sessionId)
 }
 
 /**
@@ -879,21 +904,14 @@ function messageCacheKey(sessionId, advanced) {
  * @returns an opaque token, or undefined when this profile cannot say.
  */
 async function sessionToken(ctx, sessionId) {
+  const candidates = sessionIdCandidates(sessionId)
   const sessions = ctx.get('sessions')
   if (sessions !== undefined && typeof sessions.get === 'function') {
-    // A Session id reaches this half in either form — DSH hands out the bare
-    // uuid from its event/query APIs and `session-<uuid>` from the store — and
-    // `sessions.get` keys on whichever the store minted. Try the id as given,
-    // then its other spelling, so a live session is never mistaken for a cold
-    // one and silently judged by a stale `stat`.
-    const canonical = canonicalSessionId(sessionId)
-    const candidates = [
-      sessionId,
-      canonical,
-      canonical === '' ? '' : 'session-' + canonical,
-    ]
+    // A Session id reaches this half in either form (see
+    // {@link sessionIdCandidates}) and `sessions.get` keys on whichever the
+    // store minted, so every spelling is tried — otherwise a live session is
+    // mistaken for a cold one and judged by a stale `stat`.
     for (const candidate of candidates) {
-      if (candidate === '') continue
       try {
         const live = sessions.get(candidate)
         const seq = live?.seq
@@ -905,15 +923,18 @@ async function sessionToken(ctx, sessionId) {
   }
   const persistence = ctx.get('sessionPersistence')
   if (persistence === undefined || typeof persistence.stat !== 'function') return undefined
-  try {
-    const snapshot = await persistence.stat(sessionId)
-    const revision = snapshot?.revision
-    return typeof revision === 'string' ? 'stored:' + revision : undefined
-  } catch (error) {
-    // A session the persistence layer cannot see is not an error: it just means
-    // "no cheap freshness signal, go read it".
-    return undefined
+  for (const candidate of candidates) {
+    try {
+      const snapshot = await persistence.stat(candidate)
+      const revision = snapshot?.revision
+      if (typeof revision === 'string') return 'stored:' + revision
+    } catch (error) {
+      // A session the persistence layer cannot see under this spelling is not an
+      // error: try the other one, and fall back to "no cheap freshness signal,
+      // go read it".
+    }
   }
+  return undefined
 }
 
 /**
@@ -944,8 +965,7 @@ async function readSessionMessages(ctx, sessionId, advanced = false) {
       messageCache.set(key, cached)
       return { ok: true, error: '', messages: cached.messages, dropped: cached.dropped, cached: true }
     }
-    const session = await query.readSession(sessionId)
-    const events = session?.events
+    const events = await readEventsOf(ctx, query, sessionId)
     const count = Array.isArray(events) ? events.length : 0
     // Without a token the only cheap signal is the event count, which still
     // skips extraction but cannot skip the read.
@@ -968,6 +988,83 @@ async function readSessionMessages(ctx, sessionId, advanced = false) {
   } catch (error) {
     return { ok: false, error: messageOf(error), messages: [] }
   }
+}
+
+/**
+ * Read one Session's raw events, without the harness's replay validation.
+ *
+ * `sessionQuery.readSession` replays the log through `Session.create`, which
+ * validates every message event — and a single event another plugin appended
+ * without a message id makes that replay throw (`seed user/message at index N
+ * lacks an identified message`). The Session itself is fine: it is live, the
+ * conversation renders, and only this plugin's reader broke. Quoting context
+ * needs the events, not a replayed Session, so the reader falls back to a
+ * source that does not validate:
+ *
+ *   1. the live Session (`ctx.sessions.get`), whose own event log is what the
+ *      conversation is being rendered from right now;
+ *   2. `sessionQuery.readSession`, the cheap live-preferred path;
+ *   3. a read-only persistence handle, which returns the stored events and
+ *      refuses only unknown record *vocabulary*, not message identity.
+ *
+ * @param ctx - Host context.
+ * @param query - the `sessionQuery` service.
+ * @param sessionId - DSH Session id, in either form.
+ * @returns the raw events.
+ * @throws the first failure when no source could supply them.
+ */
+async function readEventsOf(ctx, query, sessionId) {
+  const candidates = sessionIdCandidates(sessionId)
+
+  // A live Session is authoritative and already in memory; taking its events
+  // also means the current turn's not-yet-flushed appends are included.
+  const sessions = ctx.get('sessions')
+  if (sessions !== undefined && typeof sessions.get === 'function') {
+    for (const candidate of candidates) {
+      try {
+        const live = sessions.get(candidate)
+        if (live === undefined || typeof live.snapshotEvents !== 'function') continue
+        const events = live.snapshotEvents()
+        if (Array.isArray(events)) return events
+      } catch (error) {
+        // Try the next source.
+      }
+    }
+  }
+
+  let firstError
+  for (const candidate of candidates) {
+    try {
+      const session = await query.readSession(candidate)
+      const events = session?.events
+      if (Array.isArray(events)) return events
+    } catch (error) {
+      if (firstError === undefined) firstError = error
+    }
+  }
+
+  const persistence = ctx.get('sessionPersistence')
+  if (persistence !== undefined && typeof persistence.open === 'function') {
+    for (const candidate of candidates) {
+      let handle
+      try {
+        handle = await persistence.open(candidate, 'read')
+        const slice = await handle.read()
+        const events = slice?.events
+        if (Array.isArray(events) && events.length > 0) return events
+      } catch (error) {
+        if (firstError === undefined) firstError = error
+      } finally {
+        try {
+          await handle?.close()
+        } catch (error) {
+          // Nothing to release.
+        }
+      }
+    }
+  }
+
+  throw firstError ?? new Error('session "' + sessionId + '" not found')
 }
 
 /** Drop cached rows, so a test or a reload cannot observe a stale list. */

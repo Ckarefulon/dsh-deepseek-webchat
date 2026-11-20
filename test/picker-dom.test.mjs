@@ -199,6 +199,62 @@ test('the turn view draws turns, and their boxes read the turn default', { skip 
   }
 })
 
+test('a turn has a whole-turn tick beside its four kind boxes', { skip }, async () => {
+  // The two controls coexist on purpose and answer different questions: the
+  // turn tick says "all of this turn", the four boxes say which kinds. Folding
+  // a turn must never tick it, and ticking it must not remove the boxes.
+  const { document, act, click, root, openPicker, openTurns } = await harness()
+  try {
+    await openPicker()
+    await openTurns()
+    const turn = [...document.querySelectorAll('.dswc-turn')].at(-1)
+    const pick = turn.querySelector('.dswc-turnPick')
+    const caret = turn.querySelector('.dswc-caret')
+    assert.ok(pick !== null, 'no whole-turn tick')
+    assert.ok(caret !== null, 'no fold control')
+    assert.equal(pick.getAttribute('role'), 'checkbox')
+    // Untouched: the fields say 标准, but the selection is empty, so the turn
+    // tick is not on yet.
+    assert.equal(pick.getAttribute('aria-checked'), 'false')
+    assert.equal(turn.querySelectorAll('.dswc-field').length, 4, 'the four kind boxes are gone')
+
+    // The fold is a separate button and does not tick anything.
+    await click(caret)
+    const folded = [...document.querySelectorAll('.dswc-turn')].at(-1)
+    assert.equal(folded.querySelector('.dswc-turnPick').getAttribute('aria-checked'), 'false',
+      'folding a turn ticked it')
+    assert.equal(folded.querySelector('.dswc-turnRows') !== null, true, 'the fold did not open the rows')
+
+    // Ticking the turn covers all of its rows, and the kind boxes then read as
+    // fully ticked for every kind the fetched set actually carries. 详细内容 stays
+    // off here because 「高级」 is off: there are no detail rows to cover, and
+    // marking it would ask for the expensive row set as a side effect of a click.
+    const target = [...document.querySelectorAll('.dswc-turn')].at(-1)
+    await click(target.querySelector('.dswc-turnPick'))
+    const ticked = [...document.querySelectorAll('.dswc-turn')].at(-1)
+    assert.equal(ticked.querySelector('.dswc-turnPick').getAttribute('aria-checked'), 'true')
+    const states = Object.fromEntries([...ticked.querySelectorAll('.dswc-field')].map((node) => [
+      node.getAttribute('data-field'), node.getAttribute('data-state'),
+    ]))
+    assert.equal(states.input, 'on', `the whole-turn tick left 用户输入 ${states.input}`)
+    assert.equal(states.final, 'on', `the whole-turn tick left 最终输出 ${states.final}`)
+    assert.equal(states.process, 'on', `the whole-turn tick left 过程对话 ${states.process}`)
+    assert.equal(states.detail, 'off', '高级 is off, so there are no detail rows to cover')
+
+    // And unticking it clears them again.
+    await click(ticked.querySelector('.dswc-turnPick'))
+    const cleared = [...document.querySelectorAll('.dswc-turn')].at(-1)
+    assert.equal(cleared.querySelector('.dswc-turnPick').getAttribute('aria-checked'), 'false')
+    const after = Object.fromEntries([...cleared.querySelectorAll('.dswc-field')].map((node) => [
+      node.getAttribute('data-field'), node.getAttribute('data-state'),
+    ]))
+    assert.equal(Object.values(after).every((state) => state === 'off'), true,
+      `untick left ${JSON.stringify(after)}`)
+  } finally {
+    await act(async () => { root.unmount() })
+  }
+})
+
 test('详细内容 can be ticked while the turn has no detail rows yet', { skip }, async () => {
   const { document, act, root, openPicker, openTurns } = await harness()
   try {

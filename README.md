@@ -33,7 +33,7 @@ browser uses.
 | **One click to fill** | 「仅填入」 puts the preview in the DeepSeek composer through real input events; you press Enter. |
 | **Two buttons, no mode** | 「仅填入」 and 「填入并发送」 sit side by side; which one you press *is* the choice, paced to 20 s / 12 per hour. |
 | **Bulk selection** | Select all, clear, take the last N in one click, and shift-click for a range — ctrl+shift for a second one. |
-| **Two views** | 「消息」 quotes row by row; 「轮次」 groups the session into turns and picks each one apart by kind. |
+| **Two views** | 「消息」 quotes row by row; 「轮次」 groups the session into turns — one tick takes a whole turn, and four boxes narrow it by kind. |
 | **Advanced opt-in** | Thinking, tool calls and results stay out of the list — and out of the request — until you ask for them. |
 | **Explained context** | An optional note tells DeepSeek what the quotes are and where they came from. |
 | **No back-flow** | DeepSeek's answers are never written back into your DSH conversation. |
@@ -123,11 +123,13 @@ That backup is your configuration, not the plugin, so keep it.
      to add a second range without losing the first. 「全选」, 「清除」,
      「重新读取」, 「附上说明」 and 「选末尾 N」 are on the strip under the top one,
      shared with the other view.
-   - **「轮次」** groups the session into turns — one per human message — and each
-     turn carries four checkboxes: **用户输入**, **最终输出**, **过程对话** and
-     **详细内容**. The turn header folds out the rows it holds, where they can
-     still be ticked one at a time; a hand-ticked turn reports those boxes as
-     half-filled rather than lying about them.
+   - **「轮次」** groups the session into turns — one per human message. A turn has
+     **two independent controls**: a tick at its head that takes **the whole
+     turn** in one click, and the four kind boxes (**用户输入**, **最终输出**,
+     **过程对话**, **详细内容**) that narrow it to those kinds. The caret folds
+     the turn open to the rows it holds, where they can still be ticked one at a
+     time; a turn whose selection disagrees with a kind box reports that box as
+     half-filled rather than lying about it. Folding a turn never ticks it.
 
    Both views tick the **same** selection, so switching views never changes what
    is about to be sent. The list holds your turns, the assistant's replies,
@@ -171,6 +173,11 @@ Two presets worth knowing: **最小** (your input and the final output, the leas
 text that still reads as a conversation) and **全量** (everything, including the
 machinery). 详细内容 is the one that costs megabytes, so it is also the one the
 plugin does not fetch until a turn actually asks for it.
+
+The whole-turn tick and the four boxes are independent by design: ticking a turn
+covers every row it carries and marks the kinds the fetched set actually holds,
+so turning 「高级」 off leaves 详细内容 alone rather than quietly pulling in the
+expensive row set behind one click. Unticking clears both.
 
 ### What gets sent, and how
 
@@ -264,10 +271,12 @@ that may contain file contents. It is off on every open, and the host does the
 filtering, so an advanced row is never even sent to the browser unless you asked
 for it.
 
-In the turn view the same rows are reached through a turn's **详细内容** box
-instead, and the request follows that choice: the plugin asks the host for the
-advanced row set only while some turn contributes detail, so a session where
-nobody asked for it never pays for it over the wire.
+In the turn view the same rows are reached through a turn's **详细内容** box, and
+the request follows that choice: while some turn contributes detail the panel
+asks the host for the advanced row set, so a session where nobody asked for it
+never pays for it over the wire. The whole-turn tick deliberately does *not* turn
+详细内容 on — it covers the kinds the fetched set already holds, so one click
+cannot pull megabytes in as a side effect.
 
 Each row is marked with an icon from the shell's own icon set plus a short
 label, so a quoted answer and a quoted tool result stay distinguishable in the
@@ -368,6 +377,15 @@ and the list says how many. This only affects sessions in the thousands of rows
 (and, with 高级 on, sessions with tens of megabytes of tool output). Individual
 rows are also capped at 4000 characters — a picker row is one line tall, and the
 outliers are 40–50 KB tool results.
+
+**A message event without an id no longer takes the session with it.** DSH's
+`sessionQuery.readSession` replays the whole log through `Session.create`, which
+validates every message event; one `user/message` another plugin appended without
+a `message.id` made that replay throw (`seed user/message at index N lacks an
+identified message`) and the picker showed nothing for a session that was
+perfectly readable in the app. The reader now prefers the live Session's own log
+and falls back to a read-only persistence handle, neither of which replays.
+Quoting needs events, not a replayed Session.
 
 **DeepSeek can change its page.** The composer fill targets
 `textarea.ds-textarea__textarea`, and the conversation id is read from DeepSeek's
@@ -489,10 +507,13 @@ does. Run it before a release.
 
 **That distinction is not academic.** 0.6.0 shipped a turn view whose every
 checkbox rendered `off` and whose 详细内容 box could never be ticked, while 129
-tests passed — because none of them rendered the picker. The three DOM tests in
-`test/picker-dom.test.mjs` fail against 0.6.0 and pass now; `test/real-session.test.mjs`
-does the same for the model behind them, on rows captured from a real session
-rather than hand-written ones.
+tests passed — because none of them rendered the picker. Then 0.6.1 dropped the
+page view's `.dswc-host` from the render and the suite stayed green again, so the
+panel showed the quote picker's empty shell instead of the page. Both now have a
+test that would have failed: `test/render.test.mjs` asserts the page view draws
+the guest host and no picker, `test/picker-dom.test.mjs` drives the real picker
+(including a whole-turn tick) in jsdom, and `test/routes.test.js` covers the
+readers' fallbacks.
 
 ```
 src/index.js          host half    -> lib/index.js

@@ -3,9 +3,9 @@
  * a range covers, and which rows a turn contributes.
  *
  * Neither needs a DOM. The browser half is loaded the way the shell loads it —
- * through `window.__ModuleLoader__.load` — with `react` mocked to the one
- * function the module body touches at load time, so what is under test is the
- * shipped file, not a copy of it.
+ * `window.__ModuleLoader__.load` — with `react` mocked to the one function the
+ * module body touches at load time, so what is under test is the shipped file,
+ * not a copy of it.
  */
 
 import assert from 'node:assert/strict'
@@ -36,7 +36,7 @@ function loadClient() {
 }
 
 const client = loadClient()
-const { spanOf, spanIds, groupTurns, fieldsFor, sameFields, oneLine, TURN_PRESETS } = client.__internals
+const { spanOf, spanIds, groupTurns, fieldIds, turnIds, fieldsFor, sameFields, oneLine, TURN_PRESETS } = client.__internals
 
 test('a range is the same span whichever end is clicked first', () => {
   assert.deepEqual(spanOf(2, 6), [2, 6])
@@ -66,6 +66,34 @@ test('a turn ends at the next human turn, not at a question answer', () => {
   // The last assistant text of the turn, and only it, is the final output.
   assert.equal(turns[0].final.id, '5:0')
   assert.equal(turns[1].final, null)
+})
+
+test('the four field kinds and the whole-turn tick are separate questions', () => {
+  // Both controls exist side by side: `fieldIds` answers "which rows are this
+  // kind of content", `turnIds` answers "every row of this turn". The turn tick
+  // must not be derived from the fields, or narrowing a kind would silently
+  // drop the rest of the turn.
+  const rows = [
+    { id: '1:0', kind: 'user', turn: 1, text: 'ask' },
+    { id: '2:0', kind: 'assistant', turn: 1, text: 'thinking out loud' },
+    { id: '3:0', kind: 'assistant', turn: 1, text: 'the answer' },
+    { id: '4:0', kind: 'tool-call', turn: 1, text: 'grep' },
+  ]
+  const [turn] = groupTurns(rows)
+  assert.deepEqual(fieldIds(turn, 'input'), ['1:0'])
+  assert.deepEqual(fieldIds(turn, 'final'), ['3:0'])
+  assert.deepEqual(fieldIds(turn, 'process'), ['2:0'])
+  assert.deepEqual(fieldIds(turn, 'detail'), ['4:0'])
+  // The whole turn is the union — one click covers all of it.
+  assert.deepEqual(turnIds(turn), ['1:0', '2:0', '3:0', '4:0'])
+})
+
+test('a turn without a human row still gets a title from its first text', () => {
+  const turns = groupTurns([
+    { id: '1:0', kind: 'question', turn: 1, text: 'which option?' },
+    { id: '2:0', kind: 'assistant', turn: 1, text: 'done' },
+  ])
+  assert.equal(turns[0].title, 'which option?')
 })
 
 test('rows logged before the first human turn are not a turn of their own', () => {
