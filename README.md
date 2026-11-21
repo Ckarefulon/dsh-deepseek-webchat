@@ -378,6 +378,15 @@ and the list says how many. This only affects sessions in the thousands of rows
 rows are also capped at 4000 characters — a picker row is one line tall, and the
 outliers are 40–50 KB tool results.
 
+**The list is a fixed box that scrolls.** Its height is measured from the
+viewport and set inline, rather than left to `flex`. Three releases tried the CSS
+route and none of them held: the pane a tab body fills is `height: auto` at some
+sidebar widths, so `flex: 1 1 auto; min-height: 0` resolves to "as tall as the
+content" and the whole panel grows past the bottom edge, taking the composer and
+its buttons with it. A measured height does not have that failure mode — it is
+re-taken when the picker opens, when the view changes, when the composer resizes
+(the preview folds out) and on a window resize.
+
 **A message event without an id no longer takes the session with it.** DSH's
 `sessionQuery.readSession` replays the whole log through `Session.create`, which
 validates every message event; one `user/message` another plugin appended without
@@ -522,6 +531,12 @@ scripts/build.mjs     the copy
 test/index.test.js    host: urls, message filtering, bindings, snapshot, mirror
 test/routes.test.js   host: every HTTP route, driven through apply()
 test/client.test.js   browser: bundle load, registrations, fill + send, row icons
+test/render.test.mjs  browser: the body renders, page view and no-bridge view
+test/layout.test.mjs  browser: the shipped CSS, incl. the shrink chain to the list
+test/list-height.test.mjs  browser: the list's measured height, in a DOM
+test/picker-dom.test.mjs   browser: the picker in a real DOM, views and turn ticks
+test/client.test.mjs  browser: ranges and the turn model, without a DOM
+test/real-session.test.mjs browser: that model on rows from a real session
 ```
 
 ### Two checks worth running before a restart
