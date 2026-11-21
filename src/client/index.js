@@ -110,26 +110,13 @@ window.__ModuleLoader__.load({
 		const LIST_PAGE_SIZE = 10
 
 		/**
-		 * The floor the measured list height never goes below.
+		 * The floor the panel's measured height never goes below, in px.
 		 *
-		 * A two-row list is useless, but a composer you cannot see is worse. On a
-		 * very short panel the list keeps this much and the composer scrolls out of
-		 * the panel instead of the list doing all the shrinking.
+		 * Below this the toolbar, one row of context and the composer cannot all
+		 * fit, and a clipped sliver still beats collapsing to nothing. It is a last
+		 * resort, not a layout mode: any real panel measures far above it.
 		 */
-		const MIN_LIST_HEIGHT = 96
-
-		/**
-		 * The panel's fixed furniture above the list, in px.
-		 *
-		 * The toolbar is a deliberate 38px (it lines up with the conversation
-		 * header's rule; see `.dswc-toolbar`), plus `.dswc-picker`'s own top padding
-		 * (8px) and the one `gap: 6px` between the view strip and the list. Spelled
-		 * out rather than measured because these are this file's own numbers.
-		 */
-		const HEAD_AND_PADDING_HEIGHT = 38 + 8
-
-		/** `.dswc-picker`'s `gap`, between its three rows. */
-		const PICKER_GAP = 6
+		const MIN_PANEL_HEIGHT = 180
 
 		/**
 		 * The shortest gap allowed between two sends to DeepSeek, in ms.
@@ -689,8 +676,10 @@ window.__ModuleLoader__.load({
 				// show/measure-zero/hide/measure-real oscillation.
 				'[' + OVERLAY_ATTR + ']{position:fixed;display:none;z-index:40;overflow:hidden;background:#fff;contain:layout size paint style}',
 				'[' + OVERLAY_ATTR + '] webview{-webkit-app-region:no-drag;border:0;display:flex;width:100%;height:100%}',
-				// The panel itself.
-				'.dswc-root{display:flex;flex-direction:column;width:100%;height:100%;flex:1 1 auto;min-height:0;overflow:hidden;font-size:12px;color:var(--dsw-alias-label-primary,inherit)}',
+				// The panel itself. Its height is the one measured value (see the
+				// measuring effect); `height: 100%` would resolve against the shell's
+				// height-less tab body box and come out auto, which is the whole bug.
+				'.dswc-root{display:flex;flex-direction:column;box-sizing:border-box;width:100%;flex:1 1 auto;min-height:0;overflow:hidden;font-size:12px;color:var(--dsw-alias-label-primary,inherit)}',
 				// The toolbar carries the panel's top rule, so its height is not a taste
 				// decision: the shell puts the conversation header's horizontal line at
 				// the bottom of a 38px tab strip (`_tabStrip` is `height:28px;
@@ -716,12 +705,9 @@ window.__ModuleLoader__.load({
 				'.dswc-pickerTitle{font-weight:600}',
 				'.dswc-muted{color:var(--dsw-alias-label-tertiary,#adb2b8);font-size:11px}',
 				'.dswc-more{position:sticky;top:0;display:flex;align-items:center;gap:8px;padding:6px 8px;background:var(--dsw-alias-bg-layer-1,#fff);border-bottom:1px solid var(--dsw-alias-border-l4,rgba(128,128,128,.25))}',
-				// The list's flex parent. It had no `flex`/`min-height` of its own, so it
-				// grew to the list's full content height and the *pane* clipped the
-				// overflow — which is exactly why a long list still pushed the composer
-				// off the bottom even though `.dswc-list` said `flex:1;min-height:0`.
-				// A flex child only shrinks when every box between it and the pane can
-				// shrink too.
+				// The list's flex parent. `min-height: 0` is what lets it shrink below
+				// its content, which is what makes the overflow land on the list
+				// instead of on the pane.
 				'.dswc-listWrap{flex:1 1 auto;min-height:0;display:flex;flex-direction:column;overflow:hidden}',
 				// The list is the panel's only scroll container, so it has a fixed
 				// share of the pane and scrolls its own content.
@@ -2282,18 +2268,15 @@ window.__ModuleLoader__.load({
 			const listRef = React.useRef(null)
 			// The row to hold in place while a page of earlier rows is inserted above.
 			const anchoredRef = React.useRef(null)
-			// How tall the list is allowed to be, in px, measured from the panel.
+			// How tall this panel may be, in px, measured from its own top edge.
 			//
-			// Every flex-based attempt at this failed in the real shell, and the
-			// reason is that one link in the chain — the pane the tab body fills —
-			// is `height: auto` at some sidebar widths, so a `flex:1 1 auto` inside
-			// it resolves to "as tall as the content" and the whole panel overflows
-			// instead of the list scrolling. CSS cannot be talked into shrinking
-			// against an auto-height ancestor, so the height is measured and set.
-			const [listHeight, setListHeight] = React.useState(null)
+			// See the measuring effect below for why this has to be measured at all:
+			// the shell box the tab body sits in has no height, so a percentage or a
+			// flex fill below it has nothing to resolve against. One definite height
+			// on the root makes the rest of the layout ordinary flex.
+			const [panelHeight, setPanelHeight] = React.useState(null)
+			const rootRef = React.useRef(null)
 			const pickerRef = React.useRef(null)
-			const composeRef = React.useRef(null)
-			const viewBarRef = React.useRef(null)
 
 			// React to the guest coming up, failing, or binding.
 			React.useEffect(() => {
@@ -2931,69 +2914,75 @@ window.__ModuleLoader__.load({
 				return () => clearInterval(timer)
 			}, [pickerOpen, t])
 
-			// Measure how much room the list may take.
+			// Give the panel a definite height, so everything inside it can be plain
+			// flex.
 			//
-			// The panel is `toolbar + picker`, and inside the picker only the list may
-			// scroll — the view strip, the composer and its buttons are fixed
-			// furniture. `flex: 1 1 auto; min-height: 0` expresses exactly that, but
-			// it only works when every ancestor has a definite height, and the pane
-			// this tab body fills does not at some sidebar widths: it is `height:auto`
-			// there, so the panel grows past the bottom edge instead of the list
-			// scrolling, and the buttons end up off screen.
+			// This is the one thing CSS alone cannot do here, and the reason every
+			// earlier attempt failed. The shell's chain above this tab body is:
 			//
-			// So the height is measured rather than negotiated: whatever the pane
-			// offers, minus the toolbar, the view strip and the composer, is the
-			// list's height. Re-measured on open, on a view switch, whenever the
-			// composer changes size (the preview folds out), and on a resize.
+			//   _tabHost      — stretched by dockkit, definite height
+			//     _tabHostBody — `position: relative; min-width: 0` — NO height
+			//       .tabBody   — `height: 100%`  →  100% of auto = auto
+			//         .dswc-root — `height: 100%` →  auto again
+			//
+			// `_tabHostBody` in the shell's own stylesheet carries `position: relative`
+			// and `min-width` but no `height` and no `display: flex`, so a percentage
+			// height below it has nothing to resolve against. That is not a bug in
+			// this plugin and it is not width-dependent as first assumed: the tab
+			// body is auto-height in every pane. Once the height is auto, every
+			// `flex: 1 1 auto; min-height: 0` below it resolves to "as tall as the
+			// content", the panel grows past the bottom edge, and the pane's
+			// `overflow: hidden` clips the composer and its buttons away.
+			//
+			// So measure the one number that is actually definite — the distance from
+			// this panel's top edge down to the bottom of the nearest ancestor that
+			// clips it — and write it on the root. Everything inside is then ordinary
+			// flex: the list takes the leftover space and scrolls, the composer sits
+			// below it, nothing is guessed.
 			React.useEffect(() => {
-				if (!pickerOpen) {
-					setListHeight(null)
-					return undefined
-				}
 				const measure = () => {
-					const pane = pickerRef.current
-					if (pane === null) return
-					const paneRect = pane.getBoundingClientRect()
-					if (!(paneRect.width > 0)) return
-					// The bound is the *viewport*, not an ancestor's height. When the pane
-					// is `height:auto` its own box already grew to the content, so
-					// measuring it would just re-derive "as tall as the list wants" and
-					// the list would keep its own size forever. The window's bottom edge
-					// is the one line that does not move when the content does.
-					//
-					// The viewport is read from several places because none of them is
-					// guaranteed in every host: the element's own `ownerDocument` is the
-					// trustworthy one (this bundle is handed a trimmed `document` whose
-					// `documentElement` may be absent), and the global window is only a
-					// fallback.
-					const doc = pane.ownerDocument ?? document
-					const viewport = doc?.documentElement?.clientHeight
-						?? (typeof window === 'object' && Number.isFinite(window?.innerHeight) ? window.innerHeight : 0)
-						?? 0
-					if (!(viewport > 0)) return
-					const bar = viewBarRef.current?.getBoundingClientRect().height ?? 0
-					const compose = composeRef.current?.getBoundingClientRect().height ?? 0
-					// Room from the top of the list down to the bottom of the viewport,
-					// minus everything that has to fit below the list: one picker gap,
-					// the composer, one picker gap, and the picker's bottom padding.
-					const listTop = paneRect.top + HEAD_AND_PADDING_HEIGHT + bar + PICKER_GAP
-					const room = viewport - listTop - compose - PICKER_GAP - 8
-					if (!Number.isFinite(room)) return
-					setListHeight(Math.max(MIN_LIST_HEIGHT, Math.floor(room)))
+					const panel = rootRef.current
+					if (panel === null) return
+					const panelRect = panel.getBoundingClientRect()
+					if (!(panelRect.width > 0)) return
+					// The bottom edge is the nearest ancestor that clips, since that is
+					// the box the panel is cut off by. Start at the parent: the panel
+					// itself clips its own content, so including it would measure the
+					// content height this is trying to constrain.
+					const doc = panel.ownerDocument ?? document
+					let bottom = null
+					for (let node = panel.parentElement; node !== null; node = node.parentElement) {
+						const view = node.ownerDocument?.defaultView ?? window
+						const overflow = view?.getComputedStyle?.(node)?.overflowY
+						if (overflow !== undefined && overflow !== '' && overflow !== 'visible') {
+							bottom = node.getBoundingClientRect().bottom
+							break
+						}
+					}
+					if (bottom === null) {
+						// Nothing clips: fall back to the viewport's bottom, read from the
+						// element's own document because this bundle is handed a trimmed
+						// `document` whose `documentElement` may be absent.
+						const viewport = doc?.documentElement?.clientHeight
+							?? (typeof window === 'object' && Number.isFinite(window?.innerHeight) ? window.innerHeight : 0)
+						if (!(viewport > 0)) return
+						bottom = viewport
+					}
+					const height = bottom - panelRect.top
+					if (!Number.isFinite(height)) return
+					setPanelHeight(Math.max(MIN_PANEL_HEIGHT, Math.floor(height)))
 				}
 				measure()
 				const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(measure) : null
-				if (observer !== null) {
-					if (pickerRef.current !== null) observer.observe(pickerRef.current)
-					if (composeRef.current !== null) observer.observe(composeRef.current)
+				if (observer !== null && rootRef.current?.parentElement) {
+					observer.observe(rootRef.current.parentElement)
 				}
 				window.addEventListener('resize', measure)
-				// A narrow sidebar re-lays out without a window resize, so poll as a
+				// A sidebar re-lays out without a window resize, so poll as a
 				// backstop the way the parking code does.
 				const timer = setInterval(measure, PANE_POLL_MS)
-				// The first pass runs before the picker's own children have reported
-				// their boxes in some hosts, and a measurement taken then is off by
-				// the composer's height. One more after layout settles is cheap.
+				// The first pass can run before the panel has been laid out; one more
+				// after layout settles is cheap.
 				const raf = typeof requestAnimationFrame === 'function'
 					? requestAnimationFrame(measure)
 					: setTimeout(measure, 16)
@@ -3163,8 +3152,16 @@ window.__ModuleLoader__.load({
 				? null
 				: h('div', { key: 'toast', className: 'dswc-toast' }, toast)
 
+			// Everything the panel shows lives under one root with the measured
+			// height: the page view, the notice and the picker all need the same
+			// definite box, or the page view loses its height the moment the picker
+			// is not the thing being measured.
+			const panelStyle = panelHeight === null
+				? undefined
+				: { flex: '0 0 auto', height: panelHeight + 'px' }
+
 			if (!state.hasBridge) {
-				return h('div', { className: 'dswc-root' }, [
+				return h('div', { className: 'dswc-root', ref: rootRef, style: panelStyle }, [
 					toolbar,
 					h('div', { key: 'notice', className: 'dswc-notice' }, [
 						h('p', { key: 'a' }, t('status.nobridge')),
@@ -3182,7 +3179,7 @@ window.__ModuleLoader__.load({
 			// the guest covers; the guest itself lives in a container this plugin
 			// owns at the document root (see the parking effect above).
 			if (!pickerOpen) {
-				return h('div', { className: 'dswc-root' }, [
+				return h('div', { className: 'dswc-root', ref: rootRef, style: panelStyle }, [
 					toolbar,
 					h('div', { key: 'host', className: 'dswc-host', ref: hostRef }),
 					toastRow,
@@ -3573,22 +3570,22 @@ window.__ModuleLoader__.load({
 				...viewActions,
 			])
 
-			return h('div', { className: 'dswc-root' }, [
+			return h('div', {
+				className: 'dswc-root',
+				ref: rootRef,
+				// The one measured number. Everything below this is plain flex, so the
+				// list takes whatever the toolbar, view strip and composer leave and
+				// scrolls its own content.
+				style: panelStyle,
+			}, [
 				toolbar,
 				h('div', { key: 'picker', className: 'dswc-picker', ref: pickerRef }, [
 					// Keyed by view: the two lists are different components' worth of
 					// markup, and swapping them without a key makes React reuse the
 					// scroll container across the swap.
-					h('div', { key: 'viewBar', ref: viewBarRef }, [viewBar]),
-					h('div', {
-						key: 'listWrap',
-						className: 'dswc-listWrap',
-						// An explicit height when one could be measured: the list is the
-						// only thing that scrolls, so it gets the room the rest of the
-						// panel is not using instead of claiming as much as its content.
-						style: listHeight === null ? undefined : { flex: '0 0 auto', height: listHeight + 'px' },
-					}, [view === 'messages' ? messageList : turnList]),
-					h('div', { key: 'compose', className: 'dswc-compose', ref: composeRef }, [
+					h('div', { key: 'viewBar' }, [viewBar]),
+					h('div', { key: 'listWrap', className: 'dswc-listWrap' }, [view === 'messages' ? messageList : turnList]),
+					h('div', { key: 'compose', className: 'dswc-compose' }, [
 						h('textarea', {
 							key: 'question',
 							className: 'dswc-question',

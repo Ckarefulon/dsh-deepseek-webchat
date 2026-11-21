@@ -1,14 +1,23 @@
 /**
- * The list must get a bounded height and scroll its own content.
+ * The panel must get a definite height, and the list must scroll inside it.
  *
  * Three attempts at this by CSS alone were shipped and none of them worked in
- * the real shell: the pane a tab body fills is `height:auto` at some sidebar
- * widths, so `flex:1 1 auto; min-height:0` resolves to "as tall as the content"
- * and the panel grows past the bottom edge — taking the composer and its buttons
- * with it. The height is now measured against the viewport and written onto the
- * list, and this test pins that down in a DOM: the list gets an inline height,
- * and that height is smaller than its content, which is what "fixed size,
- * scrolling content" means.
+ * the real shell. The cause is in the shell's own stylesheet, not here:
+ *
+ *   _tabHost      — stretched by dockkit, definite height
+ *     _tabHostBody — `position: relative; min-width: 0` — NO height, not flex
+ *       .tabBody   — `height: 100%`  →  100% of auto = auto
+ *
+ * So a percentage height below that point has nothing to resolve against and
+ * every `flex: 1 1 auto; min-height: 0` resolves to "as tall as the content",
+ * which makes the panel grow past the bottom edge and the pane clip the
+ * composer away. The fix measures one number — the distance from the panel's
+ * top down to the nearest ancestor that clips it — and writes it on the root;
+ * everything inside is then ordinary flex.
+ *
+ * These tests pin that behaviour down in a DOM: the root carries a bounded
+ * inline height, the boxes below it are flex, and loading more rows changes the
+ * content without changing any box.
  *
  * Skipped when React/jsdom are not installed, like the other DOM tests;
  * `npm run check:render` puts them in place.
@@ -29,11 +38,14 @@ const skip = missing.length === 0
   ? false
   : `${missing.join(', ')} not installed locally; run \`npm run check:render\``
 
-const plain = JSON.parse(readFileSync(join(here, 'fixtures', 'real-plain.json'), 'utf8'))
-
 /**
- * Boot jsdom with a viewport tall enough to have a definite bound, render the
- * panel, open the picker, and hand back the tools to read the result.
+ * Boot jsdom inside a shell-like wrapper and render the panel.
+ *
+ * The wrapper reproduces the shell's shape on purpose: a clipping box with a
+ * definite height, a `position:relative` box with NO height inside it (this is
+ * `_tabHostBody`), and the panel below that. Getting this wrong is what made a
+ * pure-CSS fix look correct in a test and fail in the app.
+ *
  * @returns `{ document, window, act, click, openPicker, root, unmount }`.
  */
 async function harness() {
@@ -42,10 +54,10 @@ async function harness() {
   const { createRoot } = await import('file://' + join(TOOLS, 'react-dom', 'client.js').replaceAll('\\', '/'))
   const { act } = React
 
-  const dom = new JSDOM('<!doctype html><html><body><div id="root"></div></body></html>', {
-    url: 'http://127.0.0.1/',
-    pretendToBeVisual: true,
-  })
+  const dom = new JSDOM(
+    '<!doctype html><html><body><div id="shell"><div id="body"><div id="root"></div></div></div></body></html>',
+    { url: 'http://127.0.0.1/', pretendToBeVisual: true },
+  )
   const { window } = dom
   globalThis.window = window
   globalThis.document = window.document
@@ -58,24 +70,47 @@ async function harness() {
   window.matchMedia = mm
   globalThis.IS_REACT_ACT_ENVIRONMENT = true
 
-  // jsdom does not lay anything out, so give the panel a real viewport height and
-  // stand in for the three rectangles the measurement reads. The viewport is set
-  // on `documentElement` because that is what the bundle measures — reading
-  // `window.innerHeight` would work here but ties the code to the host's wrapped
-  // window object, which is exactly the assumption that broke.
   window.innerHeight = 800
   Object.defineProperty(window.document.documentElement, 'clientHeight', {
     value: 800, configurable: true,
   })
-  const paneTop = 40
-  const rect = { top: paneTop, left: 0, width: 320, height: 0, right: 320, bottom: 0, x: 0, y: paneTop }
-  const realGetBoundingClientRect = window.Element.prototype.getBoundingClientRect
+
+  // The shell geometry: the clipping box ends at y=800, the tab body box begins
+  // at y=40 and — like `_tabHostBody` — has no height of its own, so the panel
+  // starts at 40 and must be told it has 760px.
+  const shell = window.document.getElementById('shell')
+  const bodyBox = window.document.getElementById('body')
+  const realRect = window.Element.prototype.getBoundingClientRect
   window.Element.prototype.getBoundingClientRect = function patched() {
-    if (this.classList?.contains('dswc-picker')) return { ...rect }
-    if (this.classList?.contains('dswc-viewBar')) return { ...rect, height: 30, bottom: rect.top + 30 }
-    if (this.classList?.contains('dswc-compose')) return { ...rect, height: 210, bottom: rect.top + 210 }
-    return realGetBoundingClientRect.call(this)
+    if (this === shell) {
+      return { top: 0, left: 0, width: 320, height: 800, right: 320, bottom: 800, x: 0, y: 0 }
+    }
+    if (this === bodyBox) {
+      // No height: exactly the shell's `_tabHostBody`.
+      return { top: 40, left: 0, width: 320, height: 0, right: 320, bottom: 40, x: 0, y: 40 }
+    }
+    if (this.classList?.contains('dswc-root')) {
+      const height = Number.parseInt(this.style.height, 10)
+      const measured = Number.isFinite(height) ? height : 0
+      return {
+        top: 40, left: 0, width: 320, height: measured,
+        right: 320, bottom: 40 + measured, x: 0, y: 40,
+      }
+    }
+    return realRect.call(this)
   }
+
+  // The vertical clip is what the measurement walks up to find. jsdom's
+  // getComputedStyle returns '' for `overflow-y` by default, so state it.
+  const realComputed = window.getComputedStyle.bind(window)
+  window.getComputedStyle = (element, pseudo) => {
+    const style = realComputed(element, pseudo)
+    if (element === shell) {
+      return Object.assign(Object.create(style), style, { overflowY: 'hidden', getPropertyValue: (name) => (name === 'overflow-y' ? 'hidden' : style.getPropertyValue(name)) })
+    }
+    return style
+  }
+  globalThis.getComputedStyle = window.getComputedStyle
 
   globalThis.dshDesktop = {
     protocolVersion: 1,
@@ -150,7 +185,6 @@ async function harness() {
   })
 
   const reactRoot = createRoot(document.getElementById('root'))
-  // Counts for the assertions, carried on the ticket so they survive a render.
   const templates = { 'picker.selected': '{count} selected' }
   const translate = (key, values) => {
     const template = templates[key] ?? String(key)
@@ -186,49 +220,38 @@ async function harness() {
   }
 }
 
-test('the list is given a bounded height, and it is smaller than its content', { skip }, async () => {
-  const { document, act, openPicker, unmount } = await harness()
+const heightOfPanel = (document) =>
+  Number.parseInt(document.querySelector('.dswc-root').style.height, 10)
+
+test('the panel is told the height the shell left it, not the height its content wants', { skip }, async () => {
+  const { document, openPicker, unmount } = await harness()
   try {
     await openPicker()
-    const wrap = document.querySelector('.dswc-listWrap')
-    assert.ok(wrap !== null, 'no list wrapper')
-    const inline = wrap.style.height
-    assert.match(inline, /^\d+px$/, `the list wrapper has no measured height (style.height = "${inline}")`)
+    const inline = document.querySelector('.dswc-root').style.height
+    assert.match(inline, /^\d+px$/, `the panel has no measured height (style.height = "${inline}")`)
     const height = Number.parseInt(inline, 10)
 
-    // 800 viewport, 40 picker top, 38+8 header furniture, 30 view strip, 6 gap,
-    // 210 composer, 6 gap, 8 padding → 454 left for the list. The number itself
-    // is not the point; that it is a bounded, non-zero height derived from the
-    // viewport is.
-    assert.ok(height > 0, 'the list was collapsed to nothing')
-    assert.ok(height < 800, `the list took the whole viewport (${height}px), so nothing is bounded`)
-    assert.ok(height > 200, `the list was shrunk below what the measurements allow (${height}px)`)
+    // 800px clip bottom − 40px panel top = 760. The exact number is not the
+    // point; that it comes from the clip edge rather than from the content is.
+    assert.equal(height, 760, `the panel measured ${height}px, not the 760px the shell offers`)
 
-    // It is fixed-size, not content-sized: the wrapper must not also be growing
-    // its flex basis with the content.
-    assert.match(wrap.style.flex, /^0 0 auto$/, 'the wrapper still grows with its content')
-
-    // And the list inside it is the scroller.
-    const list = document.querySelector('.dswc-list')
-    assert.ok(list !== null, 'no list')
-    assert.equal(list.querySelectorAll('.dswc-row').length > 0, true, 'the list drew no rows')
+    // And it is fixed-size, not content-sized.
+    assert.match(document.querySelector('.dswc-root').style.flex, /^0 0 auto$/,
+      'the panel still grows with its content')
   } finally {
     await unmount()
   }
 })
 
-test('loading more rows grows the content but not the list', { skip }, async () => {
-  // The property that matters: the list's box is fixed and the rows pile up
-  // inside it. Paging is why "content taller than the box" has to be reached by
-  // asking for more, which is what this does — click the pager a few times and
-  // the height must not move while the row count does.
-  const { document, act, click, openPicker, unmount } = await harness()
+test('loading more rows grows the content but not the panel', { skip }, async () => {
+  // The property that matters: the panel's box is fixed and the rows pile up
+  // inside the list. Paging is how "content taller than the box" is reached.
+  const { document, click, openPicker, unmount } = await harness()
   try {
     await openPicker()
-    const heightOf = () => Number.parseInt(document.querySelector('.dswc-listWrap').style.height, 10)
     const rowsOf = () => document.querySelectorAll('.dswc-list .dswc-row').length
 
-    const startHeight = heightOf()
+    const startHeight = heightOfPanel(document)
     const startRows = rowsOf()
     assert.ok(startRows > 0, 'the long session drew no rows')
 
@@ -240,33 +263,39 @@ test('loading more rows grows the content but not the list', { skip }, async () 
     }
 
     const endRows = rowsOf()
-    const endHeight = heightOf()
+    const endHeight = heightOfPanel(document)
     assert.ok(endRows > startRows, `loading earlier did not add rows (${startRows} → ${endRows})`)
-    assert.equal(endHeight, startHeight, `the list grew with its content (${startHeight} → ${endHeight})`)
+    assert.equal(endHeight, startHeight, `the panel grew with its content (${startHeight} → ${endHeight})`)
   } finally {
     await unmount()
   }
 })
 
-test('the measured height follows the composer, which changes size', { skip }, async () => {
-  // Folding the preview out makes the composer taller; the list has to give up
-  // exactly that much or the buttons go off the bottom again.
-  const { document, act, click, openPicker, unmount } = await harness()
+test('the measured height follows the clip box when it changes', { skip }, async () => {
+  // A resized window moves the clip bottom; the panel has to re-measure rather
+  // than keep the height from its first render. The poll is the backstop for
+  // hosts that re-lay out without a window resize, so waiting on it is enough.
+  const { window, document, openPicker, unmount } = await harness()
   try {
     await openPicker()
-    const before = Number.parseInt(document.querySelector('.dswc-listWrap').style.height, 10)
-    assert.ok(Number.isFinite(before) && before > 0)
+    assert.equal(heightOfPanel(document), 760)
 
-    const toggle = document.querySelector('.dswc-previewHead .dswc-link')
-    assert.ok(toggle !== null, 'no preview toggle')
-    await click(toggle)
-    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 200)) })
+    // Shorten the clipping box by 200px, then let the backstop notice.
+    const shell = window.document.getElementById('shell')
+    const realComputed = window.getComputedStyle
+    window.Element.prototype.getBoundingClientRect = (function (previous) {
+      return function patched() {
+        if (this === shell) {
+          return { top: 0, left: 0, width: 320, height: 600, right: 320, bottom: 600, x: 0, y: 0 }
+        }
+        return previous.call(this)
+      }
+    })(window.Element.prototype.getBoundingClientRect)
+    void realComputed
 
-    const after = Number.parseInt(document.querySelector('.dswc-listWrap').style.height, 10)
-    assert.ok(Number.isFinite(after) && after > 0)
-    // With this harness's fixed composer rect the two agree; the assertion that
-    // matters is that the measurement ran again and still produced a bound.
-    assert.ok(after <= 800, `the list grew past the viewport (${after}px)`)
+    await new Promise((resolve) => setTimeout(resolve, 2400))
+
+    assert.equal(heightOfPanel(document), 560, 'the panel did not re-measure after the clip box moved')
   } finally {
     await unmount()
   }

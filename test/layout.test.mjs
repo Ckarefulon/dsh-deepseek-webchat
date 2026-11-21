@@ -60,15 +60,25 @@ function has(selector, property, value) {
   return true
 }
 
-test('every box between the pane and the list can shrink', () => {
+test('every box between the panel and the list can shrink', () => {
   // A flex child only shrinks when each ancestor in the chain can shrink too.
-  // The chain is pane → .dswc-root → .dswc-picker → .dswc-listWrap → .dswc-list.
+  // With `.dswc-root` carrying a measured height, the chain below it is what
+  // makes the list take the leftover space:
+  //   .dswc-root → .dswc-picker → .dswc-listWrap → .dswc-list
   for (const selector of ['.dswc-root', '.dswc-picker', '.dswc-listWrap']) {
     has(selector, 'min-height', '0')
     assert.match(rule(selector), /flex:1 1 auto/, `${selector} is not a shrinking flex item`)
   }
   has('.dswc-picker', 'overflow', 'hidden')
   has('.dswc-root', 'overflow', 'hidden')
+})
+
+test('the composer is fixed furniture, not a flex sibling competing for room', () => {
+  // It sits below the list at its natural height. If it ever gained flex-grow it
+  // would split the leftover space with the list instead of staying put.
+  const declarations = rule('.dswc-compose')
+  assert.equal(/flex:1/.test(declarations), false, 'the composer became a flexible child')
+  assert.match(declarations, /flex:none|flex-shrink:0|flex:0/, 'the composer can be shrunk away')
 })
 
 test('the list wrapper is a flex column, not an auto-height block', () => {
@@ -102,10 +112,14 @@ test('the page view keeps a rectangle for the guest', () => {
   assert.match(rule('.dswc-host'), /min-height:0/)
 })
 
-test('the picker and the page view do not both claim the panel', () => {
-  // `.dswc-root` is the panel's outer box in both views; it must not grow past
-  // the pane. `height:100%` alone does not resolve when the parent's height is
-  // indefinite, which is why `flex:1 1 auto` is there as well.
-  has('.dswc-root', 'height', '100%')
+test('the panel does not claim a height it cannot resolve', () => {
+  // The shell puts a tab body inside `_tabHostBody`, which is `position:relative`
+  // with no height, so `.tabBody{height:100%}` resolves to auto. A `height:100%`
+  // on this root would inherit that: auto. The height is measured instead and
+  // written inline, so the rule must stay percentage-free.
+  assert.equal(/height:100%/.test(rule('.dswc-root')), false,
+    '`.dswc-root` claims `height:100%`, which is auto inside the shell tab body')
   has('.dswc-root', 'overflow', 'hidden')
+  assert.match(rule('.dswc-root'), /flex:1 1 auto/)
+  assert.match(rule('.dswc-root'), /min-height:0/)
 })
