@@ -55,7 +55,7 @@ async function harness() {
   const { act } = React
 
   const dom = new JSDOM(
-    '<!doctype html><html><body><div id="shell"><div id="body"><div id="root"></div></div></div></body></html>',
+    '<!doctype html><html><body><div id="shell"><div id="body"><div id="tabBody"><div id="root"></div></div></div></div></body></html>',
     { url: 'http://127.0.0.1/', pretendToBeVisual: true },
   )
   const { window } = dom
@@ -80,6 +80,7 @@ async function harness() {
   // starts at 40 and must be told it has 760px.
   const shell = window.document.getElementById('shell')
   const bodyBox = window.document.getElementById('body')
+  const tabBody = window.document.getElementById('tabBody')
   const realRect = window.Element.prototype.getBoundingClientRect
   window.Element.prototype.getBoundingClientRect = function patched() {
     if (this === shell) {
@@ -88,6 +89,20 @@ async function harness() {
     if (this === bodyBox) {
       // No height: exactly the shell's `_tabHostBody`.
       return { top: 40, left: 0, width: 320, height: 0, right: 320, bottom: 40, x: 0, y: 40 }
+    }
+    if (this === tabBody) {
+      // The plugin's own slot: `overflow:hidden` with a height that resolves to
+      // auto, so it is *content-sized*. The content here is a long session, so
+      // its bottom edge sits well below the pane — this is the trap. Treating the
+      // nearest clipping ancestor as the bound would measure ~900px of content
+      // instead of the 760px the pane actually offers.
+      const inner = window.document.getElementById('root')
+      const measured = inner === null ? 0 : Number.parseInt(inner.style.height, 10) || 0
+      const height = Math.max(measured, 900)
+      return {
+        top: 40, left: 0, width: 320, height,
+        right: 320, bottom: 40 + height, x: 0, y: 40,
+      }
     }
     if (this.classList?.contains('dswc-root')) {
       const height = Number.parseInt(this.style.height, 10)
@@ -101,12 +116,18 @@ async function harness() {
   }
 
   // The vertical clip is what the measurement walks up to find. jsdom's
-  // getComputedStyle returns '' for `overflow-y` by default, so state it.
+  // getComputedStyle returns '' for `overflow-y` by default, so state it for
+  // both clipping boxes: the content-sized tab body and the pane that really
+  // cuts the panel off.
   const realComputed = window.getComputedStyle.bind(window)
+  const clipping = new Set([shell, tabBody])
   window.getComputedStyle = (element, pseudo) => {
     const style = realComputed(element, pseudo)
-    if (element === shell) {
-      return Object.assign(Object.create(style), style, { overflowY: 'hidden', getPropertyValue: (name) => (name === 'overflow-y' ? 'hidden' : style.getPropertyValue(name)) })
+    if (clipping.has(element)) {
+      return Object.assign(Object.create(style), style, {
+        overflowY: 'hidden',
+        getPropertyValue: (name) => (name === 'overflow-y' ? 'hidden' : style.getPropertyValue(name)),
+      })
     }
     return style
   }
@@ -266,6 +287,60 @@ test('loading more rows grows the content but not the panel', { skip }, async ()
     const endHeight = heightOfPanel(document)
     assert.ok(endRows > startRows, `loading earlier did not add rows (${startRows} → ${endRows})`)
     assert.equal(endHeight, startHeight, `the panel grew with its content (${startHeight} → ${endHeight})`)
+  } finally {
+    await unmount()
+  }
+})
+
+test('a content-sized clipping ancestor is not mistaken for the bound', { skip }, async () => {
+  // The near miss this test exists for: `.tabBody` — the plugin's own slot — is
+  // `overflow: hidden` with a height that resolves to auto, so its bottom edge is
+  // wherever the panel ends. Taking the *nearest* clipping ancestor would measure
+  // the content height right back and the panel would grow forever. The bound has
+  // to be the tightest edge in the chain.
+  const { document, openPicker, unmount } = await harness()
+  try {
+    await openPicker()
+    const height = heightOfPanel(document)
+    // The tab body's bottom equals 40 + the panel's own height. If it were taken
+    // as the bound, the measured height would be its own previous value and the
+    // assertion below would drift instead of settling on 760.
+    assert.equal(height, 760, `the tab body's content-sized edge was used as the bound (got ${height}px)`)
+
+    // And it settles: measuring again must not walk the panel upward or downward.
+    await new Promise((resolve) => setTimeout(resolve, 2400))
+    assert.equal(heightOfPanel(document), 760, 'the height drifted across re-measurements')
+  } finally {
+    await unmount()
+  }
+})
+
+test('a clipping box that has collapsed to the panel top is skipped', { skip }, async () => {
+  // The failure this guards against is a feedback loop. Before the panel has
+  // been measured, the content-sized slot box is only as tall as its own top
+  // edge — i.e. its bottom edge equals the panel's top. Using that as the bound
+  // yields a height of 0, which the floor then turns into 180px, and 180px is
+  // what gets written and measured again forever. A box whose bottom edge is at
+  // or above the panel's top cannot be the thing cutting the panel off.
+  const { window, document, openPicker, unmount } = await harness()
+  try {
+    await openPicker()
+    assert.equal(heightOfPanel(document), 760)
+
+    // Collapse the slot box to the panel's top edge and re-measure: the height
+    // must not fall to the floor.
+    const tabBody = window.document.getElementById('tabBody')
+    const realRect = window.Element.prototype.getBoundingClientRect
+    window.Element.prototype.getBoundingClientRect = function patched() {
+      if (this === tabBody) {
+        return { top: 40, left: 0, width: 320, height: 0, right: 320, bottom: 40, x: 0, y: 40 }
+      }
+      return realRect.call(this)
+    }
+    await new Promise((resolve) => setTimeout(resolve, 2400))
+
+    assert.equal(heightOfPanel(document), 760,
+      `a collapsed clipping box dragged the panel down (got ${heightOfPanel(document)}px)`)
   } finally {
     await unmount()
   }

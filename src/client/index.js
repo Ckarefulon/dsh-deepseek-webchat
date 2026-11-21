@@ -2945,29 +2945,49 @@ window.__ModuleLoader__.load({
 					if (panel === null) return
 					const panelRect = panel.getBoundingClientRect()
 					if (!(panelRect.width > 0)) return
-					// The bottom edge is the nearest ancestor that clips, since that is
-					// the box the panel is cut off by. Start at the parent: the panel
-					// itself clips its own content, so including it would measure the
-					// content height this is trying to constrain.
 					const doc = panel.ownerDocument ?? document
+					// The bound is the *smallest* bottom edge in the chain of boxes that
+					// clip the panel, plus the viewport.
+					//
+					// Smallest, not nearest, and that distinction is the whole point.
+					// The nearest clipping ancestor in the real shell is `.tabBody` —
+					// the plugin's own slot — and it is `overflow:hidden` with a height
+					// that resolves to auto, so its box is *content-sized*: its bottom
+					// edge is wherever the panel currently ends. Taking it as the bound
+					// would measure the content height back and the panel would keep
+					// growing. The box that really cuts the panel off is further up
+					// (dockkit's `_pane`), so the answer is the tightest of all of them.
+					//
+					// Self is excluded: `.dswc-root` clips its own content, so including
+					// it would just report the height being computed.
+					//
+					// A box whose bottom edge is at or above the panel's top edge is
+					// also skipped. It cannot be the thing that cuts the panel off, and
+					// taking it would produce a negative height. This bites on the
+					// plugin's own slot box (`.tabBody`), which is content-sized: while
+					// the panel is still unmeasured that box has collapsed to its top
+					// edge, and it must not win the minimum then.
 					let bottom = null
+					const tighten = (value) => {
+						if (!Number.isFinite(value)) return
+						if (value <= panelRect.top) return
+						if (bottom === null || value < bottom) bottom = value
+					}
 					for (let node = panel.parentElement; node !== null; node = node.parentElement) {
 						const view = node.ownerDocument?.defaultView ?? window
 						const overflow = view?.getComputedStyle?.(node)?.overflowY
 						if (overflow !== undefined && overflow !== '' && overflow !== 'visible') {
-							bottom = node.getBoundingClientRect().bottom
-							break
+							tighten(node.getBoundingClientRect().bottom)
 						}
 					}
-					if (bottom === null) {
-						// Nothing clips: fall back to the viewport's bottom, read from the
-						// element's own document because this bundle is handed a trimmed
-						// `document` whose `documentElement` may be absent.
-						const viewport = doc?.documentElement?.clientHeight
-							?? (typeof window === 'object' && Number.isFinite(window?.innerHeight) ? window.innerHeight : 0)
-						if (!(viewport > 0)) return
-						bottom = viewport
-					}
+					// The viewport is always a bound: nothing may render past its bottom.
+					// Read from the element's own document, since this bundle is handed a
+					// trimmed `document` whose `documentElement` may be absent.
+					const viewport = doc?.documentElement?.clientHeight
+						?? (typeof window === 'object' && Number.isFinite(window?.innerHeight) ? window.innerHeight : 0)
+					if (!(viewport > 0)) return
+					tighten(viewport)
+					if (bottom === null) return
 					const height = bottom - panelRect.top
 					if (!Number.isFinite(height)) return
 					setPanelHeight(Math.max(MIN_PANEL_HEIGHT, Math.floor(height)))
