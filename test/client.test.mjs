@@ -36,7 +36,7 @@ function loadClient() {
 }
 
 const client = loadClient()
-const { spanOf, spanIds, groupTurns, fieldIds, turnIds, fieldsFor, sameFields, oneLine, TURN_PRESETS } = client.__internals
+const { spanOf, spanIds, flipIds, groupTurns, fieldIds, turnIds, fieldsFor, sameFields, oneLine, TURN_PRESETS } = client.__internals
 
 test('a range is the same span whichever end is clicked first', () => {
   assert.deepEqual(spanOf(2, 6), [2, 6])
@@ -48,6 +48,23 @@ test('a range is the same span whichever end is clicked first', () => {
 test('a range resolves to row ids in log order', () => {
   const rows = [{ id: 'a' }, { id: 'b' }, { id: 'c' }, { id: 'd' }]
   assert.deepEqual(spanIds(rows, spanOf(3, 1)), ['b', 'c', 'd'])
+})
+
+test('a block flips what it covers, and leaves the rest of the selection alone', () => {
+  // The batch's whole point: the same gesture adds unticked rows and removes
+  // ticked ones, so a run that was already selected comes off in one go.
+  assert.deepEqual([...flipIds(new Set(), ['b', 'c'])], ['b', 'c'])
+  assert.deepEqual([...flipIds(new Set(['a', 'b']), ['b', 'c'])], ['a', 'c'])
+  assert.deepEqual([...flipIds(new Set(['a', 'b', 'c']), ['a', 'b', 'c'])], [])
+  // Overlapping a block with itself twice is the identity, which is what makes
+  // a re-click on the same far end undo instead of duplicating.
+  const once = flipIds(new Set(['a']), ['a', 'b', 'c'])
+  assert.deepEqual([...flipIds(once, ['a', 'b', 'c'])], ['a'])
+  // The base is not mutated: a redraw has to start from the batch's opening
+  // selection every time, or shrinking the far end would be impossible.
+  const base = new Set(['a'])
+  flipIds(base, ['b'])
+  assert.deepEqual([...base], ['a'])
 })
 
 test('a turn ends at the next human turn, not at a question answer', () => {

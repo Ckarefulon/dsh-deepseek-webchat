@@ -186,7 +186,7 @@ window.__ModuleLoader__.load({
 			'action.fillOnly': '仅填入',
 			'action.copy': '复制',
 			'view.messages': '消息',
-			'view.messagesHint': '按条引用：单击勾选，Shift+单击选区间，Ctrl+Shift+单击把另一段区间加进来。',
+			'view.messagesHint': '按条引用：单击翻转这一条；按住 Shift 单击，从这一批的起点到这一条整段一起翻转 —— 不松开再点就改变终点，松开 Shift 就是新的一批。',
 			'view.turns': '轮次',
 			'view.turnsHint': '按轮引用：轮首的勾选框一次勾选整轮；展开后还能按「用户输入 / 最终输出 / 过程对话 / 详细内容」单独选。',
 			'picker.refreshHint': '重新读取这个会话（不会丢掉已选内容之外的其他设置）',
@@ -278,7 +278,7 @@ window.__ModuleLoader__.load({
 			'action.fillOnly': 'Fill only',
 			'action.copy': 'Copy',
 			'view.messages': 'Messages',
-			'view.messagesHint': 'Quote row by row: click to tick, Shift+click for a range, Ctrl+Shift+click to add a second range.',
+			'view.messagesHint': 'Quote row by row: click flips one row; hold Shift and click to flip the whole block from where the batch started to the row you clicked — click again to move the far end, let go of Shift to start a new batch.',
 			'view.turns': 'Turns',
 			'view.turnsHint': 'Quote turn by turn: choose which kinds of content each turn contributes.',
 			'picker.refreshHint': 'Read this session again',
@@ -1936,32 +1936,25 @@ window.__ModuleLoader__.load({
 		//#region selection model
 
 		/**
-		 * How a plain click on a row behaves, and what the shift/ctrl keys did to
-		 * the one before it.
+		 * The Shift batch, as it stands right now.
 		 *
-		 * This is the classic desktop model rather than anything bespoke: `anchor`
-		 * is the last row clicked with no modifier, `focus` is the last row clicked
-		 * with one, and `base` is what the selection was before the current run of
-		 * modified clicks started.
+		 * Not a "selection" in the desktop-list sense — it records only what a
+		 * batch of Shift-clicks needs in order to redraw itself:
 		 *
-		 * `base` is the part that makes a range reusable. Without it, every
-		 * Shift-click would have to either paint the range onto the live selection
-		 * (which cannot shrink: a second Shift-click nearer the anchor leaves the
-		 * first range behind) or replace it (which throws away ticking one row at a
-		 * time). Keeping the pre-run selection means Shift-click *redraws* the
-		 * range instead of accumulating it, so overshooting a range is fixed by
-		 * clicking nearer the anchor, and Ctrl+Shift adds a second range to the
-		 * selection that was there before the first one.
+		 *   - `anchor` is the row the batch *opened* on, i.e. the first row clicked
+		 *     after Shift went down. It is not "the last row clicked", because a
+		 *     batch is measured from where it started.
+		 *   - `focus` is the row the newest click landed on, so the span a batch
+		 *     acts on is exactly `anchor`…`focus`. A null `focus` means no batch is
+		 *     open — a plain click, a bulk action, or letting go of Shift.
+		 *   - `base` is the selection as it was when the batch opened, and it is
+		 *     what makes the batch *invert* rather than accumulate: every click
+		 *     recomputes the whole result as "base, with the span flipped".
 		 *
-		 * @param anchor - row id the range is measured from, or null.
-		 * @param focus - the last row a modified click landed on, or null.
-		 * @param base - the selection the current modified run started from.
-		 * @param additive - whether the current run adds to `base` (Shift+Ctrl) or
-		 *   replaces it (Shift alone).
-		 * @returns the initial state.
+		 * @returns the closed state.
 		 */
 		function emptySelection() {
-			return { anchor: null, focus: null, base: new Set(), additive: false }
+			return { anchor: null, focus: null, base: new Set() }
 		}
 
 		/**
@@ -1980,6 +1973,28 @@ window.__ModuleLoader__.load({
 			const ids = []
 			for (let index = span[0]; index <= span[1]; index += 1) ids.push(rows[index].id)
 			return ids
+		}
+
+		/**
+		 * `base` with every id in `ids` flipped: a ticked id becomes unticked and
+		 * an unticked one becomes ticked.
+		 *
+		 * A Shift batch is defined this way rather than by "adding the span", which
+		 * is what makes a block invertible: the same gesture that ticks a run of
+		 * rows also unticks a run that was already ticked, and re-clicking nearer
+		 * the start of the block takes rows back off instead of piling more on.
+		 *
+		 * @param base - the selection the batch opened on.
+		 * @param ids - the rows the block covers, in log order.
+		 * @returns a new set; `base` is not modified.
+		 */
+		function flipIds(base, ids) {
+			const next = new Set(base)
+			for (const id of ids) {
+				if (next.has(id)) next.delete(id)
+				else next.add(id)
+			}
+			return next
 		}
 
 		/**
@@ -2225,9 +2240,9 @@ window.__ModuleLoader__.load({
 			const [dropped, setDropped] = React.useState(0)
 			const [loadError, setLoadError] = React.useState('')
 			const [selected, setSelected] = React.useState(() => new Set())
-			// The shift/ctrl range state. Kept in a ref rather than in state
-			// because every click has to read the value a previous click in the
-			// same gesture just wrote, and a state update lands a render later.
+			// The open Shift batch. Kept in a ref rather than in state because every
+			// click has to read the value a previous click in the same batch just
+			// wrote, and a state update lands a render later.
 			const selRef = React.useRef(emptySelection())
 			const [turns, setTurns] = React.useState([])
 			const [expanded, setExpanded] = React.useState(() => new Set())
@@ -2284,6 +2299,44 @@ window.__ModuleLoader__.load({
 				watchers.add(watcher)
 				return () => {
 					watchers.delete(watcher)
+				}
+			}, [])
+
+			// Letting go of Shift ends the batch.
+			//
+			// A Shift batch is measured from the row it opened on, so the batch has
+			// to be told when that stretch of clicking is over — otherwise the next
+			// Shift-click (after Shift was released and pressed again) would keep
+			// extending from an anchor the reader has long stopped thinking about.
+			//
+			// Three signals, because one is not enough:
+			//   - `keyup` is the normal case, at the moment Shift comes up.
+			//   - `keydown` is the recovery path. Releasing Shift while the pointer is
+			//     over the DeepSeek guest delivers the keyup to *that* page, so this
+			//     one never sees it and would otherwise treat the next press as a
+			//     continuation. Only a fresh press counts: a held Shift auto-repeats
+			//     on some platforms, and those repeats must not close a live batch.
+			//   - `blur` covers letting go after switching windows, where no keyup
+			//     arrives here at all.
+			React.useEffect(() => {
+				const close = () => {
+					selRef.current = emptySelection()
+				}
+				const onKeyDown = (event) => {
+					if (event.key !== 'Shift' || event.repeat === true) return
+					close()
+				}
+				const onKeyUp = (event) => {
+					if (event.key !== 'Shift') return
+					close()
+				}
+				window.addEventListener('keydown', onKeyDown)
+				window.addEventListener('keyup', onKeyUp)
+				window.addEventListener('blur', close)
+				return () => {
+					window.removeEventListener('keydown', onKeyDown)
+					window.removeEventListener('keyup', onKeyUp)
+					window.removeEventListener('blur', close)
 				}
 			}, [])
 
@@ -2697,7 +2750,7 @@ window.__ModuleLoader__.load({
 					else map.set(turn.id, carried)
 					return map
 				})
-				// A range measured from a turn that just moved is worse than none.
+				// A batch measured from a turn that just moved is worse than none.
 				selRef.current = emptySelection()
 			}, [selected, defaultChoice])
 
@@ -2747,9 +2800,11 @@ window.__ModuleLoader__.load({
 				return Number(element?.getAttribute('data-index') ?? '')
 			}, [])
 
-			// The list of rows a gesture applies to: everything mounted, oldest
-			// first. Ranges are resolved against the rows on screen, so a range
-			// never silently spans pages the reader cannot see.
+			// The list of rows a gesture applies to: the rows the picker holds,
+			// oldest first. A span is resolved over that whole list rather than the
+			// mounted page, so a Shift batch started from 全选 cannot disagree with
+			// the ticks already on screen; the far end may therefore be off screen,
+			// and the tick count says how much was taken.
 			const rangeOf = React.useCallback((from, to) => {
 				const rows = messages
 				if (rows === null) return []
@@ -2757,77 +2812,75 @@ window.__ModuleLoader__.load({
 				return span === null ? [] : spanIds(rows, span)
 			}, [messages])
 
-			// One click on a row: tick it, and place the anchor a range is measured
-			// from.
+			// One click on a row.
 			//
-			// Plain click toggles. Shift-click redraws the range from the anchor —
-			// it does not add to the previous range, which is what lets a range be
-			// shrunk by clicking nearer the anchor instead of being cleared and
-			// rebuilt. Ctrl+Shift adds a range to the selection that existed before
-			// the run of modified clicks began, which is how two separate blocks
-			// end up selected together.
+			// **A plain click flips that one row** and closes any batch: it is the
+			// answer to "I want this one, and I will start over from here".
+			//
+			// **A Shift-click flips everything from the batch's anchor to the row
+			// clicked, both ends included.** "Flips" is the operative word — a ticked
+			// row in that span is unticked and an unticked one is ticked — so a
+			// batch is a one-gesture way to invert a block, not only a way to grow a
+			// selection. Holding Shift and clicking again *redraws* the block from
+			// the same anchor to the new row: the far end moves while the near end
+			// stays put. Letting go of Shift ends the batch, and the next Shift-click
+			// opens a new one whose anchor is wherever that click lands.
+			//
+			// Redrawing (rather than painting onto the live selection) is what makes
+			// the far end movable in both directions: every click recomputes the
+			// whole result from `base`, the selection as it stood when the batch
+			// opened. Painting would only ever be able to add, so a block overshot by
+			// a few rows could never be pulled back.
 			const onRowClick = React.useCallback((event, id, index) => {
 				const state = selRef.current
 				const shift = event.shiftKey === true
-				const ctrl = event.ctrlKey === true || event.metaKey === true
 
 				if (!shift) {
 					const next = new Set(selected)
 					if (next.has(id)) next.delete(id)
 					else next.add(id)
-					selRef.current = { anchor: index, focus: index, base: new Set(next), additive: false }
+					// No batch: `focus === null` is what tells the next Shift-click
+					// that it has to open one.
+					selRef.current = emptySelection()
 					setSelected(next)
 					return
 				}
 
-				// A range needs an anchor. Without one, the row clicked becomes it
-				// and the range is that single row — the same thing a plain click
-				// would have done, without the surprise of selecting an arbitrary
-				// span.
-				const start = state.focus ?? state.anchor ?? index
-				const baseSelection = state.focus === null ? new Set(selected) : state.base
-				const additive = ctrl || state.additive
-				const next = additive ? new Set(baseSelection) : new Set()
-				for (const rowId of rangeOf(start, index)) next.add(rowId)
-				selRef.current = {
-					anchor: state.anchor ?? index,
-					focus: index,
-					base: baseSelection,
-					additive,
-				}
-				setSelected(next)
+				// The first Shift-click of a batch opens it on the row it landed on:
+				// that row is the anchor, and the block is that single row — flipped.
+				// Every later Shift-click in the same batch keeps that anchor and only
+				// moves `focus`, so the block is redrawn rather than accumulated.
+				const anchor = state.focus === null ? index : state.anchor
+				const base = state.focus === null ? new Set(selected) : state.base
+				setSelected(flipIds(base, rangeOf(anchor, index)))
+				selRef.current = { anchor, focus: index, base }
 			}, [selected, rangeOf])
 
-			// The bulk actions all go through here so the anchor does not point at
-			// a row that is no longer ticked when the next Shift-click arrives.
-			const replaceSelection = React.useCallback((ids, anchorIndex) => {
+			// The bulk actions all go through here so a batch cannot outlive the
+			// selection it was measured against: 全选/清除/选末尾/换行集 all close it,
+			// and the next Shift-click opens a fresh one.
+			const replaceSelection = React.useCallback((ids) => {
 				const next = ids instanceof Set ? ids : new Set(ids)
-				selRef.current = {
-					anchor: anchorIndex ?? null,
-					focus: anchorIndex ?? null,
-					base: new Set(next),
-					additive: false,
-				}
+				selRef.current = emptySelection()
 				setSelected(next)
 			}, [])
 
-			// 「选末尾 N」 is a range from the Nth-from-last row to the newest, which
-			// is exactly what two Shift-clicks would produce — so it leaves the
-			// anchor at its far end and the next Shift-click can grow or shrink it
-			// instead of starting over.
+			// 「选末尾 N」 is a block from the Nth-from-last row to the newest, and it
+			// closes any batch: it replaces the selection outright rather than
+			// extending one, so anything a batch was measured from is gone.
 			const selectLast = React.useCallback((count) => {
 				const rows = messages ?? []
 				const start = Math.max(0, rows.length - count)
-				replaceSelection(rangeOf(start, rows.length - 1), start)
+				replaceSelection(rangeOf(start, rows.length - 1))
 			}, [messages, rangeOf, replaceSelection])
 
 			const selectAll = React.useCallback(() => {
 				const rows = messages ?? []
-				replaceSelection(rows.map((row) => row.id), rows.length === 0 ? null : 0)
+				replaceSelection(rows.map((row) => row.id))
 			}, [messages, replaceSelection])
 
 			const selectNone = React.useCallback(() => {
-				replaceSelection(new Set(), null)
+				replaceSelection(new Set())
 			}, [replaceSelection])
 
 			const push = React.useCallback(async (send) => {
@@ -2860,8 +2913,9 @@ window.__ModuleLoader__.load({
 					}
 					// The selection has been consumed either way — it is in
 					// DeepSeek's composer now — so leaving it ticked would only make
-					// the next push repeat this one.
-					setSelected(new Set())
+					// the next push repeat this one. Any open batch is consumed with
+					// it: it was measured against a selection that no longer exists.
+					replaceSelection(new Set())
 					setQuestion('')
 					if (send && result.sent === true) {
 						setToast(format(t('toast.sent'), { count: result.length ?? preview.length }))
@@ -2873,7 +2927,7 @@ window.__ModuleLoader__.load({
 				} finally {
 					setBusy(false)
 				}
-			}, [preview, t])
+			}, [preview, t, replaceSelection])
 
 			const copy = React.useCallback(async () => {
 				try {
@@ -3090,7 +3144,7 @@ window.__ModuleLoader__.load({
 					onClick: () => {
 						setPickerOpen((open) => !open)
 						if (pickerOpen) return
-						// Every open starts a fresh gesture history; a range left over
+						// Every open starts a fresh batch history; a batch left over
 						// from the last visit would act on rows that may have moved.
 						selRef.current = emptySelection()
 					},
@@ -3210,12 +3264,11 @@ window.__ModuleLoader__.load({
 			// bottom, so the newest rows are what a person reads and picks from;
 			// older rows are pulled in a page at a time from the top.
 			//
-			// A range is resolved over the rows this picker holds (`messages`), not
+			// A span is resolved over the rows this picker holds (`messages`), not
 			// over the mounted slice, and that is deliberate: 全选 acts on the whole
-			// session, so a Shift-click after a 全选 has to as well, or the reader
-			// watches rows past the fold lose their tick when they extend. The
-			// consequence is that the far end of a range may be off screen, so the
-			// count of a range reports how much of it is above the mounted slice.
+			// session, so a Shift batch has to as well, or the reader watching rows
+			// past the fold would see them keep a tick the batch should have flipped.
+			// The consequence is that the far end of a batch may be off screen.
 			const start = Math.max(0, total - pageSize)
 			const hiddenEarlier = start > 0
 			const shown = messages === null ? null : messages.slice(start)
@@ -3224,8 +3277,8 @@ window.__ModuleLoader__.load({
 				: h('p', { key: 'error', className: 'dswc-muted' }, loadError)
 
 			// What a row is marked as, and where in the list it is. `data-index`
-			// is the row's position in the whole list, which is what a shift-click
-			// resolves its range against.
+			// is the row's position in the whole list, which is what a Shift-click
+			// resolves its block against.
 			const rowNode = (row, index) => {
 				const ticked = selected.has(row.id)
 				return h('div', {
@@ -3249,14 +3302,10 @@ window.__ModuleLoader__.load({
 					onKeyDown: (event) => {
 						if (event.key !== ' ' && event.key !== 'Enter') return
 						event.preventDefault()
-						// The keyboard has no Shift-click, so it gets the one thing
-						// modifier-clicking exists for: extend from the last row
-						// touched to this one.
-						if (event.shiftKey) {
-							onRowClick({ shiftKey: true, ctrlKey: false, metaKey: false }, row.id, index)
-							return
-						}
-						onRowClick({ shiftKey: false, ctrlKey: false, metaKey: false }, row.id, index)
+						// The keyboard has no pointer, so it gets the one thing
+						// Shift-clicking exists for: flip the block from where this
+						// batch opened to this row.
+						onRowClick({ shiftKey: event.shiftKey === true }, row.id, index)
 					},
 				}, [
 					h('span', { key: 'box', className: 'dswc-box', 'aria-hidden': 'true' }),
@@ -3746,6 +3795,7 @@ window.__ModuleLoader__.load({
 			emptySelection,
 			spanOf,
 			spanIds,
+			flipIds,
 			fieldsFor,
 			fieldIds,
 			turnIds,

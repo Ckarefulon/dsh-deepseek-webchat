@@ -368,11 +368,11 @@ describe('picker affordances', () => {
 
   it('offers the last few rows as one action', () => {
     assert.ok(bundle.includes('action.lastWithCount'))
-    // The tail is a range from the Nth-from-last row to the newest, which also
-    // leaves the range anchor at its far end so a following Shift-click grows
-    // or shrinks it instead of starting over.
+    // The tail is a span from the Nth-from-last row to the newest. It replaces
+    // the selection outright — unlike a Shift batch it is not measured from an
+    // earlier anchor — and closes any batch that was open.
     assert.ok(bundle.includes('const start = Math.max(0, rows.length - count)'))
-    assert.ok(bundle.includes('replaceSelection(rangeOf(start, rows.length - 1), start)'))
+    assert.ok(bundle.includes('replaceSelection(rangeOf(start, rows.length - 1))'))
   })
 
   it('scrolls the list to the newest rows', () => {
@@ -380,7 +380,9 @@ describe('picker affordances', () => {
   })
 
   it('clears the selection once the content has been pushed', () => {
-    assert.ok(bundle.includes('setSelected(new Set())'))
+    // Through `replaceSelection`, not a bare `setSelected`: the push consumes the
+    // selection, so any Shift batch measured against it has to be consumed too.
+    assert.ok(bundle.includes('replaceSelection(new Set())'))
   })
 
   it('pages the list instead of mounting every row at once', () => {
@@ -419,26 +421,38 @@ describe('picker affordances', () => {
     assert.ok(bundle.includes("'aria-checked'"))
     assert.ok(bundle.includes("key: row.id"), 'rows are keyed by seq, which repeats')
     assert.ok(bundle.includes("'data-id': row.id"))
-    // A click now also has to place the range anchor, so it goes through
+    // A click now also has to place the batch anchor, so it goes through
     // `onRowClick` rather than a bare `toggle(row.id)` — one handler still, and
     // the identity that travels with it is still `row.id`.
     assert.ok(bundle.includes('onClick: (event) => onRowClick(event, row.id, index)'))
-    assert.ok(bundle.includes("'data-index': String(index)"), 'a range needs row positions')
+    assert.ok(bundle.includes("'data-index': String(index)"), 'a block needs row positions')
     assert.equal(bundle.includes("type: 'checkbox', checked"), false, 'a native input is back')
   })
 
-  it('selects ranges with shift and unions them with ctrl+shift', () => {
-    // The classic desktop model: plain click toggles and places the anchor,
-    // Shift+click redraws the range from it, Ctrl+Shift+click adds a range to
-    // the selection that existed before the modified run began.
-    assert.ok(bundle.includes('function spanOf(a, b)'), 'no range arithmetic')
+  it('flips a block from where the shift batch opened to where it was released', () => {
+    // The model is one gesture, not two: press Shift, click a row (the batch's
+    // anchor), click another (the far end), and every row between them —
+    // both ends included — is *inverted*. Clicking again while Shift is still
+    // down moves the far end from the same anchor, so an overshot block shrinks
+    // back instead of piling up. Releasing Shift closes the batch, and the next
+    // Shift-click opens a new one wherever it lands.
+    assert.ok(bundle.includes('function spanOf(a, b)'), 'no span arithmetic')
+    assert.ok(bundle.includes('function flipIds(base, ids)'), 'the block is not inverted')
     assert.ok(bundle.includes('event.shiftKey'), 'shift is not read')
-    assert.ok(bundle.includes('event.ctrlKey') && bundle.includes('event.metaKey'))
-    // The redraw-not-accumulate part: `base` is the selection the run started
-    // from, so a second Shift-click nearer the anchor shrinks the range.
-    assert.ok(bundle.includes('base: baseSelection'), 'the pre-run selection is not kept')
-    // A range is resolved over the rows the picker holds, not the mounted slice,
-    // so extending after 全选 cannot drop ticks the reader cannot see.
+    // Ctrl is not part of this model: there is no second range to union in.
+    assert.equal(bundle.includes('event.ctrlKey'), false, 'ctrl+shift is still wired up')
+    // Redraw-not-accumulate: every click recomputes from `base`, the selection
+    // as it stood when the batch opened, so the far end is movable both ways.
+    assert.ok(bundle.includes('const base = state.focus === null ? new Set(selected) : state.base'))
+    assert.ok(bundle.includes('setSelected(flipIds(base, rangeOf(anchor, index)))'))
+    // Letting go of Shift is what ends a batch; without it, the anchor would
+    // outlive the gesture and the next Shift-click would extend from it. A fresh
+    // Shift *press* also closes one, because releasing the key over the DeepSeek
+    // guest delivers that keyup to the guest's page, not to this one.
+    assert.ok(bundle.includes("event.key !== 'Shift'"), 'releasing shift does not close the batch')
+    assert.ok(bundle.includes('event.repeat === true'), 'a held shift would restart the batch')
+    // A batch is resolved over the rows the picker holds, not the mounted slice,
+    // so extending after 全选 cannot leave ticks behind that the reader cannot see.
     assert.ok(bundle.includes('const span = spanOf(from, to)'))
   })
 

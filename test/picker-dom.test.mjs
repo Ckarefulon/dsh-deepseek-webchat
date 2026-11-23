@@ -82,7 +82,11 @@ async function harness() {
   const fakeWindow = {
     __ModuleLoader__: { load: (entry) => { registered = entry } },
     localStorage: storage,
-    addEventListener: () => {}, removeEventListener: () => {},
+    // The batch listens for Shift's release on this window, so it has to be a
+    // real event target rather than a no-op — otherwise every test here would
+    // silently run inside one never-ending batch.
+    addEventListener: window.addEventListener.bind(window),
+    removeEventListener: window.removeEventListener.bind(window),
     setInterval: window.setInterval.bind(window), clearInterval: window.clearInterval.bind(window),
     setTimeout: window.setTimeout.bind(window), clearTimeout: window.clearTimeout.bind(window),
     matchMedia: mm,
@@ -129,9 +133,25 @@ async function harness() {
   const rootNode = document.getElementById('root')
   const reactRoot = createRoot(rootNode)
 
-  const click = async (node) => {
-    await act(async () => { node.dispatchEvent(new window.MouseEvent('click', { bubbles: true })) })
+  const click = async (node, init = {}) => {
+    await act(async () => { node.dispatchEvent(new window.MouseEvent('click', { bubbles: true, ...init })) })
     await act(async () => { await new Promise((resolve) => setTimeout(resolve, 120)) })
+  }
+
+  /** Release Shift, which is what closes a batch. */
+  const releaseShift = async () => {
+    await act(async () => {
+      window.dispatchEvent(new window.KeyboardEvent('keyup', { key: 'Shift' }))
+    })
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 40)) })
+  }
+
+  /** Press Shift, which also closes one — see the recovery path in the body. */
+  const pressShift = async () => {
+    await act(async () => {
+      window.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Shift' }))
+    })
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 40)) })
   }
 
   await act(async () => {
@@ -159,7 +179,7 @@ async function harness() {
     await click(tab)
   }
 
-  return { window, document, React, act, click, root: reactRoot, openPicker, openTurns }
+  return { window, document, React, act, click, pressShift, releaseShift, root: reactRoot, openPicker, openTurns }
 }
 
 test('the picker draws rows and a view strip', { skip }, async () => {
@@ -274,6 +294,99 @@ test('详细内容 can be ticked while the turn has no detail rows yet', { skip 
     const afterBox = [...after.querySelectorAll('.dswc-field')].find((node) => node.getAttribute('data-field') === 'detail')
     assert.equal(afterBox.querySelector('input[type="checkbox"]').checked, true, 'the tick did not survive a render')
     assert.equal(afterBox.getAttribute('data-state'), 'on', 'the drawn box disagrees with the control')
+  } finally {
+    await act(async () => { root.unmount() })
+  }
+})
+
+/**
+ * The ticked rows, by position in the whole list.
+ *
+ * Read from `aria-checked` rather than from any internal state: the model under
+ * test is what the reader sees, and the whole class of bug this file exists for
+ * was a state that was right while the drawn box was wrong.
+ * @param document - the harness document.
+ * @returns sorted row indices that are ticked.
+ */
+function ticked(document) {
+  return [...document.querySelectorAll('.dswc-row')]
+    .filter((node) => node.getAttribute('aria-checked') === 'true')
+    .map((node) => Number(node.getAttribute('data-index')))
+    .sort((a, b) => a - b)
+}
+
+/**
+ * The row at `index` in the whole list, whether or not it is mounted.
+ * @param document - the harness document.
+ * @param index - the row's position.
+ * @returns the row element.
+ */
+function rowAt(document, index) {
+  const node = [...document.querySelectorAll('.dswc-row')]
+    .find((candidate) => candidate.getAttribute('data-index') === String(index))
+  assert.ok(node !== undefined, `row ${index} is not mounted`)
+  return node
+}
+
+test('a shift batch flips every row between its anchor and the far end, both included', { skip }, async () => {
+  const { document, act, click, pressShift, releaseShift, root, openPicker } = await harness()
+  try {
+    await openPicker()
+    const indices = [...document.querySelectorAll('.dswc-row')].map((node) => Number(node.getAttribute('data-index')))
+    assert.ok(indices.length >= 4, 'the fixture is too short for a block')
+    const [a, b, c, d] = indices.slice(-4)
+
+    // Open a batch on the first of the four and take it to the third: the two
+    // ends are flipped too, which is what "含两端" means.
+    await pressShift()
+    await click(rowAt(document, b), { shiftKey: true })
+    await click(rowAt(document, d), { shiftKey: true })
+    assert.deepEqual(ticked(document), [b, c, d], 'the block skipped one of its ends')
+
+    // Still holding Shift, click nearer the anchor: the far end moves back and
+    // the block shrinks. It must not accumulate.
+    await click(rowAt(document, c), { shiftKey: true })
+    assert.deepEqual(ticked(document), [b, c], 'a second shift-click accumulated instead of redrawing')
+
+    // Letting go of Shift is what starts a new batch; the next Shift-click's
+    // anchor is where it lands, not the old one.
+    await releaseShift()
+    await pressShift()
+    await click(rowAt(document, a), { shiftKey: true })
+    await releaseShift()
+    assert.deepEqual(ticked(document), [a, b, c], 'the old anchor outlived the batch')
+  } finally {
+    await act(async () => { root.unmount() })
+  }
+})
+
+test('a shift batch inverts rows that were already ticked', { skip }, async () => {
+  const { document, act, click, pressShift, releaseShift, root, openPicker } = await harness()
+  try {
+    await openPicker()
+    const indices = [...document.querySelectorAll('.dswc-row')].map((node) => Number(node.getAttribute('data-index')))
+    const [a, b, c, d] = indices.slice(-4)
+
+    // Tick one row inside the block the ordinary way, then run a batch over it.
+    await click(rowAt(document, c))
+    assert.deepEqual(ticked(document), [c])
+
+    await pressShift()
+    await click(rowAt(document, b), { shiftKey: true })
+    await click(rowAt(document, d), { shiftKey: true })
+    // c was ticked, so the block took it off; b and d were not, so it put them on.
+    assert.deepEqual(ticked(document), [b, d], 'the batch added the span instead of inverting it')
+
+    // A batch over a block that was ticked by hand clears what it covers and
+    // leaves rows outside it alone.
+    await releaseShift()
+    await click(rowAt(document, a))
+    assert.deepEqual(ticked(document), [a, b, d])
+    await pressShift()
+    await click(rowAt(document, a), { shiftKey: true })
+    await click(rowAt(document, b), { shiftKey: true })
+    await releaseShift()
+    assert.deepEqual(ticked(document), [d], 'a batch over a block ticked by hand left rows behind')
   } finally {
     await act(async () => { root.unmount() })
   }

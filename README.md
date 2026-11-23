@@ -32,7 +32,7 @@ browser uses.
 | **Todo list included** | The agent's todo list is quotable without turning anything on. |
 | **One click to fill** | 「仅填入」 puts the preview in the DeepSeek composer through real input events; you press Enter. |
 | **Two buttons, no mode** | 「仅填入」 and 「填入并发送」 sit side by side; which one you press *is* the choice, paced to 20 s / 12 per hour. |
-| **Bulk selection** | Select all, clear, take the last N in one click, and shift-click for a range — ctrl+shift for a second one. |
+| **Bulk selection** | Select all, clear, take the last N in one click, and a Shift batch that flips a whole span — ends included — with the far end movable while Shift stays down. |
 | **Two views** | 「消息」 quotes row by row; 「轮次」 groups the session into turns — one tick takes a whole turn, and four boxes narrow it by kind. |
 | **Advanced opt-in** | Thinking, tool calls and results stay out of the list — and out of the request — until you ask for them. |
 | **Explained context** | An optional note tells DeepSeek what the quotes are and where they came from. |
@@ -118,11 +118,14 @@ That backup is your configuration, not the plugin, so keep it.
    rows. The panel has two views, and a segmented switch in the top strip
    decides which one the list shows:
 
-   - **「消息」** is the row-by-row view. Click a row to tick it, **Shift+click**
-     for everything between it and the row you last clicked, **Ctrl+Shift+click**
-     to add a second range without losing the first. 「全选」, 「清除」,
-     「重新读取」, 「附上说明」 and 「选末尾 N」 are on the strip under the top one,
-     shared with the other view.
+   - **「消息」** is the row-by-row view. Click a row to flip it. **Hold Shift and
+     click** to flip the whole block from where the batch started to the row you
+     clicked — both ends included, and *flip* is literal: ticked rows in that
+     block come off, unticked ones go on. Keep Shift down and click again to move
+     the block's far end (the near end stays where the batch opened); let go of
+     Shift and the next Shift-click opens a new batch wherever it lands. 「全选」,
+     「清除」, 「重新读取」, 「附上说明」 and 「选末尾 N」 are on the strip under the top
+     one, shared with the other view.
    - **「轮次」** groups the session into turns — one per human message. A turn has
      **two independent controls**: a tick at its head that takes **the whole
      turn** in one click, and the four kind boxes (**用户输入**, **最终输出**,
@@ -521,8 +524,9 @@ page view's `.dswc-host` from the render and the suite stayed green again, so th
 panel showed the quote picker's empty shell instead of the page. Both now have a
 test that would have failed: `test/render.test.mjs` asserts the page view draws
 the guest host and no picker, `test/picker-dom.test.mjs` drives the real picker
-(including a whole-turn tick) in jsdom, and `test/routes.test.js` covers the
-readers' fallbacks.
+(including a whole-turn tick, and a Shift batch that flips a span, redraws it
+while Shift is held, and starts over once it is released), and
+`test/routes.test.js` covers the readers' fallbacks.
 
 ```
 src/index.js          host half    -> lib/index.js
@@ -534,8 +538,9 @@ test/client.test.js   browser: bundle load, registrations, fill + send, row icon
 test/render.test.mjs  browser: the body renders, page view and no-bridge view
 test/layout.test.mjs  browser: the shipped CSS, incl. the shrink chain to the list
 test/list-height.test.mjs  browser: the list's measured height, in a DOM
-test/picker-dom.test.mjs   browser: the picker in a real DOM, views and turn ticks
-test/client.test.mjs  browser: ranges and the turn model, without a DOM
+test/picker-dom.test.mjs   browser: the picker in a real DOM, views, turn ticks,
+                           and the Shift batch gesture
+test/client.test.mjs  browser: spans, the flip and the turn model, without a DOM
 test/real-session.test.mjs browser: that model on rows from a real session
 ```
 
