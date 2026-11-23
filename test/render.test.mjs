@@ -117,11 +117,19 @@ const loaded = skip === false
 
 const { registered, body } = loaded
 
-test('apply registers the tab, the body and the header door', { skip }, () => {
+test('apply registers the tab and the body, and nothing in the header', { skip }, () => {
   assert.equal(typeof body, 'function')
   assert.equal(registered.tab.kind, 'deepseek-webchat')
   assert.equal(registered.tab.keepMounted, true)
-  assert.equal(typeof registered.components['deepseek-webchat'], 'function')
+  assert.equal(typeof registered.components['dsh-deepseek-webchat'], 'function')
+  // The header utilities contribution was removed on purpose; the guide door is
+  // what opens the tab now.
+  assert.equal(
+    Object.keys(registered.components).includes('deepseek-webchat'),
+    false,
+    'a header icon came back',
+  )
+  assert.equal(registered.tab.guide?.[0]?.id, 'open', 'the guide door is gone too')
 })
 
 test('the body renders the "no browser channel" notice rather than throwing', { skip }, () => {
@@ -158,10 +166,8 @@ test('with the picker closed the body is the page, not the picker', { skip }, ()
   }
 })
 
-test('the header door renders', { skip }, () => {
-  const html = renderToStaticMarkup(React.createElement(registered.components['deepseek-webchat'], {
-    t: (key) => key,
-    open: () => {},
-  }))
-  assert.match(html, /dswc-headerButton/)
+test('the guide door renders the bubble artwork', { skip }, () => {
+  const icon = registered.tab.guide[0].icon
+  const html = renderToStaticMarkup(React.createElement(icon, { size: 16 }))
+  assert.match(html, /<svg/)
 })

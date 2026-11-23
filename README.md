@@ -47,8 +47,7 @@ initialised (the `desktop` profile is created by the app on first run).
 dsh plugin --profile desktop add dsh-deepseek-webchat
 ```
 
-Then restart DSH Desktop. The tab appears in the sidebar column's guide, and a
-chat icon in the conversation header opens it directly.
+Then restart DSH Desktop. The tab appears in the sidebar column's guide.
 
 `lib/` is committed to this repository on purpose, and there is no `prepare`
 script, so the install needs **no build step and no pnpm `allowBuilds`
@@ -107,8 +106,7 @@ That backup is your configuration, not the plugin, so keep it.
 
 ## Using it
 
-1. **Open the tab.** Click the chat icon in the conversation header, or pick
-   「DeepSeek 网页版」 from the sidebar column's guide.
+1. **Open the tab.** Pick 「DeepSeek 网页版」 from the sidebar column's guide.
 2. **Sign in** to DeepSeek the first time. It is a normal browser login, inside
    the panel.
 3. **Send one message** in the DeepSeek page. DeepSeek creates a conversation
@@ -463,7 +461,8 @@ harness's own user-questions service uses; the answer arrives as an ordinary
 human filter would otherwise drop.
 
 **Browser half** (`lib/client.js`, exports `./client`) registers the sidebar tab
-type, its body, and a header door.
+type and its body. It deliberately contributes nothing to the conversation
+header's utilities row — the tab is reached through the sidebar column's guide.
 
 **The guest, and why it is not an iframe.** `chat.deepseek.com` sends
 `Content-Security-Policy: frame-ancestors 'none'`, so an `<iframe>` is refused by

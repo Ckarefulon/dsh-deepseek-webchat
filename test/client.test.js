@@ -138,11 +138,13 @@ describe('browser bundle', () => {
 
   it('declares the client inject list the manifest promises', () => {
     const { exports } = loadBundle()
-    assert.deepEqual(exports.inject, ['slots', 'locale', 'sidebarRight', 'sidebarRightTabs'])
+    // `sidebarRight` is gone with the header door: opening a tab programmatically
+    // was its only use, and the guide entry is opened by the shell itself.
+    assert.deepEqual(exports.inject, ['slots', 'locale', 'sidebarRightTabs'])
     // The manifest's package-level inject list must name the packages that own
     // the surfaces this plugin registers into, or its slots arrive too early.
+    // `ui-conversation` owned the header row this plugin no longer touches.
     assert.deepEqual(manifest.dsh.client.inject, [
-      '@deepseek-ai/dsh-client-ui-conversation',
       '@deepseek-ai/dsh-client-ui-sidebar-right',
     ])
   })
@@ -220,23 +222,22 @@ describe('registrations', () => {
     assert.ok(found.dictionaries.en['type.label'])
   })
 
-  it('offers a header door that opens this tab in the acting Session', () => {
-    const bundle = loadBundle()
-    bundle.exports.apply(bundle.ctx)
-    const injected = bundle.registrations.find(
+  it('does not add an icon to the conversation header', () => {
+    // It used to register a `conversation.session.header.utilities` entry so the
+    // tab was one click from the chat. That row already carries the shell's own
+    // controls plus whatever other plugins mount there, and a second bubble in it
+    // was one icon too many — the tab is reached through the column's guide.
+    const loaded = loadBundle()
+    loaded.exports.apply(loaded.ctx)
+    const injected = loaded.registrations.filter(
       (entry) => entry.kind === 'slots.inject'
         && entry.name === 'conversation.session.header.utilities',
     )
-    assert.notEqual(injected, undefined, 'the header utility must be contributed')
-    injected.register()
-    const registered = bundle.registrations.filter((entry) => entry.kind === 'slots.register').at(-1)
-    assert.equal(registered.definition.name, 'conversation.session.header.utilities')
-    assert.equal(typeof registered.component, 'function')
-    // The door must open this plugin's own kind, in the Session that clicked it.
-    registered.definition.inject('session-7').open()
-    const opened = bundle.registrations.find((entry) => entry.kind === 'sidebarRight.openTabIn')
-    assert.equal(opened.sessionId, 'session-7')
-    assert.equal(opened.tabKind, 'deepseek-webchat')
+    assert.deepEqual(injected, [], 'the header icon is back')
+    assert.equal(bundle.includes('dswc-headerButton'), false, 'dead header-button chrome')
+    // The reason for the removal is written down where the registration used to
+    // be, so a later reader does not put it back for "discoverability".
+    assert.ok(bundle.includes('No `conversation.session.header.utilities` contribution'))
   })
 })
 
